@@ -1,0 +1,24 @@
+{
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string", "description": "User ID matching auth UID" },
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "Learner email address" },
+        "email_verified": { "type": "boolean", "description": "Whether email is verified" },
+        "display_name": { "type": "string", "description": "Full name or display name" },
+        "photo_url": { "type": "string", "description": "Avatar URL" },
+        "role": { "type": "string", "description": "User role: learner or admin" },
+        "account_status": { "type": "string", "description": "Account status: active or suspended" },
+        "created_at": { "type": "string", "description": "ISO timestamp of creation" },
+        "updated_at": { "type": "string", "description": "ISO timestamp of update" },
+        "last_login_at": { "type": "string", "description": "ISO timestamp of last login" },
+        "device_info": { "type": "object", "description": "Client device and browser information" },
+        "last_device": { "type": "string", "description": "Human readable summary of device" },
+        "auth_provider": { "type": "string", "description": "google or admin" },
+        "provider_user_id": { "type": "string", "description": "Provider user ID" }
+      }
+    }
+  }
+}

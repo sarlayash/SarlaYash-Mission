@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Shield, 
   ShieldCheck,
@@ -22,12 +22,20 @@ import {
   ExternalLink,
   Lock,
   RefreshCw,
-  Clock
+  Clock,
+  Smartphone,
+  Laptop,
+  Globe,
+  Radio,
+  Wifi,
+  Sparkles,
+  CheckCheck
 } from 'lucide-react';
 import { User, Track, TrackDay, AssignmentSubmission, Payment, Certificate, LearnerBadge } from '../../types';
 import { storage } from '../../lib/storage';
 import { auth } from '../../lib/auth';
 import { StatusBadge } from '../common/StatusBadge';
+import { subscribeToLearnersRealtime, FIREBASE_METADATA } from '../../lib/firebase';
 
 interface AdminPortalProps {
   currentUser: User;
@@ -67,6 +75,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
   // Assignment Review Desk State
   // ----------------------------------------------------
   const [submissionFilter, setSubmissionFilter] = useState<'all' | 'submitted' | 'reviewed' | 'needs_revision'>('submitted');
+  const [submissionLearnerFilter, setSubmissionLearnerFilter] = useState<string>('');
   const [activeReviewSub, setActiveReviewSub] = useState<AssignmentSubmission | null>(null);
   const [reviewGrade, setReviewGrade] = useState<number>(90);
   const [reviewFeedback, setReviewFeedback] = useState<string>('');
@@ -115,8 +124,61 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
   const [newPassword, setNewPassword] = useState('');
   const [passwordNotice, setPasswordNotice] = useState<{ success: boolean; msg: string } | null>(null);
 
-  // All Users
-  const allUsers = storage.getUsers();
+  // ----------------------------------------------------
+  // Firebase Real-Time Telemetry & Learner Sync State
+  // ----------------------------------------------------
+  const [realtimeLearners, setRealtimeLearners] = useState<User[]>([]);
+  const [isFirebaseLive, setIsFirebaseLive] = useState(true);
+  const [lastLiveSync, setLastLiveSync] = useState<Date>(new Date());
+  const [liveToast, setLiveToast] = useState<string | null>(null);
+  const [learnerFilter, setLearnerFilter] = useState<'all' | 'verified' | 'mobile' | 'desktop'>('all');
+  const [learnerSearchQuery, setLearnerSearchQuery] = useState('');
+
+  // Subscribe to real-time updates from Firebase Firestore
+  useEffect(() => {
+    let initialLoadDone = false;
+    const unsubscribe = subscribeToLearnersRealtime(
+      (learners) => {
+        setRealtimeLearners(learners);
+        setLastLiveSync(new Date());
+        setIsFirebaseLive(true);
+        
+        // Notify admin when new learner joins or logs in after initial mount
+        if (initialLoadDone && learners.length > 0) {
+          const latest = learners[0];
+          setLiveToast(`⚡ Real-Time: ${latest.display_name} active on ${latest.last_device || 'Device'}`);
+          setTimeout(() => setLiveToast(null), 5000);
+        }
+        initialLoadDone = true;
+
+        // Cache learners locally
+        learners.forEach(u => storage.saveUser(u));
+      },
+      (error) => {
+        console.warn('Real-time sync alert:', error);
+        setIsFirebaseLive(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // Merge Firestore real-time learners with cached storage users
+  const allUsers = useMemo(() => {
+    const localUsers = storage.getUsers();
+    if (realtimeLearners.length === 0) return localUsers;
+
+    const userMap = new Map<string, User>();
+    localUsers.forEach(u => userMap.set(u.id, u));
+    realtimeLearners.forEach(u => userMap.set(u.id, { ...userMap.get(u.id), ...u }));
+
+    return Array.from(userMap.values()).sort((a, b) => {
+      const tA = new Date(a.last_login_at || a.created_at || 0).getTime();
+      const tB = new Date(b.last_login_at || b.created_at || 0).getTime();
+      return tB - tA;
+    });
+  }, [realtimeLearners, refreshKey]);
+
   const allPayments = storage.getPayments();
   const allSubmissions = storage.getSubmissions();
   const allCertificates = storage.getCertificates();
@@ -131,6 +193,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
   });
 
   const filteredSubmissions = allSubmissions.filter(s => {
+    if (submissionLearnerFilter && s.user_id !== submissionLearnerFilter) return false;
     if (submissionFilter === 'all') return true;
     return s.status === submissionFilter;
   });
@@ -924,74 +987,429 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
         )}
 
         {/* ---------------------------------------------------- */}
-        {/* TAB 4: LEARNERS ROSTER */}
+        {/* TAB 4: REAL-TIME LEARNERS ROSTER (FIREBASE SYNC) */}
         {/* ---------------------------------------------------- */}
-        {activeTab === 'learners' && (
-          <div className="space-y-6">
-            <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex items-center justify-between">
-              <h3 className="font-display font-bold text-base text-white">Registered Mission Learners</h3>
-              <span className="text-xs font-mono text-slate-400">{allUsers.length} Total Users</span>
-            </div>
+        {activeTab === 'learners' && (() => {
+          // Compute telemetry metrics across all connected learners
+          const learnersList = allUsers.filter(u => u.role !== 'admin');
+          const verifiedCount = learnersList.filter(u => u.email_verified).length;
+          const mobileCount = learnersList.filter(u => 
+            u.device_info?.device_type === 'Mobile' || 
+            u.device_info?.device_type === 'Tablet' ||
+            (u.last_device && (u.last_device.includes('Mobile') || u.last_device.includes('iPhone') || u.last_device.includes('Android')))
+          ).length;
+          const desktopCount = learnersList.length - mobileCount;
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 font-mono">
-                    <tr>
-                      <th className="p-3.5">Learner</th>
-                      <th className="p-3.5">Role</th>
-                      <th className="p-3.5">Enrolled Tracks</th>
-                      <th className="p-3.5">GenAI Progress</th>
-                      <th className="p-3.5">Agentic Progress</th>
-                      <th className="p-3.5">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {allUsers.map(user => {
-                      const enrollments = storage.getEnrollmentsByUser(user.id);
-                      const genAIProg = storage.calculateLearnerProgress(user.id, 'track-genai');
-                      const agenticProg = storage.calculateLearnerProgress(user.id, 'track-agentic');
+          // Filter learners according to filter pills & search query
+          const filteredLearners = learnersList.filter(user => {
+            if (learnerFilter === 'verified' && !user.email_verified) return false;
+            if (learnerFilter === 'mobile') {
+              const isMobile = user.device_info?.device_type === 'Mobile' || 
+                               user.device_info?.device_type === 'Tablet' ||
+                               (user.last_device && (user.last_device.includes('Mobile') || user.last_device.includes('iPhone') || user.last_device.includes('Android')));
+              if (!isMobile) return false;
+            }
+            if (learnerFilter === 'desktop') {
+              const isMobile = user.device_info?.device_type === 'Mobile' || 
+                               user.device_info?.device_type === 'Tablet' ||
+                               (user.last_device && (user.last_device.includes('Mobile') || user.last_device.includes('iPhone') || user.last_device.includes('Android')));
+              if (isMobile) return false;
+            }
 
-                      return (
-                        <tr key={user.id} className="hover:bg-slate-900/50">
-                          <td className="p-3.5">
-                            <span className="font-bold text-white block">{user.display_name}</span>
-                            <span className="text-slate-400 text-[11px]">{user.email}</span>
-                          </td>
-                          <td className="p-3.5">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold ${
-                              user.role === 'admin' ? 'bg-purple-500/20 text-purple-300' : 'bg-cyan-500/20 text-cyan-300'
-                            }`}>
-                              {user.role}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-slate-300">
-                            {enrollments.length > 0 ? (
-                              <span className="font-mono">{enrollments.length} Active</span>
-                            ) : (
-                              <span className="text-slate-500">None</span>
-                            )}
-                          </td>
-                          <td className="p-3.5 font-mono">
-                            <span className="text-cyan-400 font-bold">{genAIProg.percentage}%</span>
-                            <span className="text-slate-500 text-[10px] block">{genAIProg.completedDays}/30 days</span>
-                          </td>
-                          <td className="p-3.5 font-mono">
-                            <span className="text-blue-400 font-bold">{agenticProg.percentage}%</span>
-                            <span className="text-slate-500 text-[10px] block">{agenticProg.completedDays}/30 days</span>
-                          </td>
-                          <td className="p-3.5">
-                            <StatusBadge status={user.account_status} />
+            if (learnerSearchQuery.trim()) {
+              const q = learnerSearchQuery.toLowerCase();
+              const matchName = user.display_name.toLowerCase().includes(q);
+              const matchEmail = user.email.toLowerCase().includes(q);
+              const matchDevice = (user.last_device || '').toLowerCase().includes(q) ||
+                                  (user.device_info?.summary || '').toLowerCase().includes(q) ||
+                                  (user.device_info?.browser || '').toLowerCase().includes(q) ||
+                                  (user.device_info?.os || '').toLowerCase().includes(q);
+              return matchName || matchEmail || matchDevice;
+            }
+
+            return true;
+          });
+
+          return (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              
+              {/* Real-time Connection & Telemetry Header */}
+              <div className="bg-slate-900/90 p-5 rounded-2xl border border-slate-800 shadow-xl space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex items-center justify-center">
+                      <span className="animate-ping absolute inline-flex h-3.5 w-3.5 rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-display font-bold text-base sm:text-lg text-white">
+                          Real-Time Learners Command Center
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 text-[10px] font-mono font-bold flex items-center gap-1">
+                          <Radio className="w-3 h-3 animate-pulse text-emerald-400" />
+                          Firebase Live Sync Active
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Automatic synchronization across mobile phones, laptops, tablets, and any web browser via Firestore.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={triggerRefresh}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono flex items-center gap-1.5 border border-slate-700 transition-colors"
+                      title="Force refresh data"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Sync Now
+                    </button>
+                    <div className="text-[11px] font-mono text-slate-400 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800/80">
+                      Last Synced: <span className="text-cyan-400 font-semibold">{lastLiveSync.toLocaleTimeString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Real-time Telemetry Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block">Total Real Learners</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold font-mono text-white">{learnersList.length}</span>
+                      <span className="text-[11px] text-cyan-400 font-mono">in Firebase</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block">Email Verified (Google)</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold font-mono text-emerald-400">{verifiedCount}</span>
+                      <span className="text-[11px] text-emerald-500 font-mono">
+                        {learnersList.length > 0 ? Math.round((verifiedCount / learnersList.length) * 100) : 100}% verified
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block">Mobile Sessions</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold font-mono text-cyan-400">{mobileCount}</span>
+                      <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                        <Smartphone className="w-3 h-3" /> Phones/Tabs
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block">Laptop & Desktop</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold font-mono text-blue-400">{desktopCount}</span>
+                      <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                        <Laptop className="w-3 h-3" /> Computers
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Event Toast Banner (Appears when learner connects from device) */}
+              {liveToast && (
+                <div className="p-3.5 rounded-xl bg-cyan-950/70 border border-cyan-700/80 text-cyan-200 text-xs flex items-center justify-between shadow-lg shadow-cyan-950/40 animate-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <span className="font-semibold">{liveToast}</span>
+                  </div>
+                  <button 
+                    onClick={() => setLiveToast(null)} 
+                    className="text-cyan-400 hover:text-white text-xs font-bold px-2 py-0.5"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Search & Filter Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setLearnerFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                      learnerFilter === 'all'
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                        : 'text-slate-400 hover:text-slate-200 bg-slate-950 border border-slate-800'
+                    }`}
+                  >
+                    All Learners ({learnersList.length})
+                  </button>
+
+                  <button
+                    onClick={() => setLearnerFilter('verified')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      learnerFilter === 'verified'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'text-slate-400 hover:text-slate-200 bg-slate-950 border border-slate-800'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Verified Email Only ({verifiedCount})
+                  </button>
+
+                  <button
+                    onClick={() => setLearnerFilter('mobile')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      learnerFilter === 'mobile'
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                        : 'text-slate-400 hover:text-slate-200 bg-slate-950 border border-slate-800'
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                    Mobile Devices ({mobileCount})
+                  </button>
+
+                  <button
+                    onClick={() => setLearnerFilter('desktop')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      learnerFilter === 'desktop'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                        : 'text-slate-400 hover:text-slate-200 bg-slate-950 border border-slate-800'
+                    }`}
+                  >
+                    <Laptop className="w-3.5 h-3.5 text-blue-400" />
+                    Laptop / Desktop ({desktopCount})
+                  </button>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={learnerSearchQuery}
+                    onChange={(e) => setLearnerSearchQuery(e.target.value)}
+                    placeholder="Search by learner, email, device..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                  {learnerSearchQuery && (
+                    <button 
+                      onClick={() => setLearnerSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Real-time Learner Table */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 font-mono">
+                      <tr>
+                        <th className="p-4">Learner Identity</th>
+                        <th className="p-4">Email Verification</th>
+                        <th className="p-4">Device & Browser Telemetry</th>
+                        <th className="p-4">Last Activity</th>
+                        <th className="p-4">Mission Progress</th>
+                        <th className="p-4 text-right">Admin Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {filteredLearners.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-10 text-center text-slate-500 space-y-2">
+                            <Users className="w-8 h-8 mx-auto text-slate-600" />
+                            <p className="text-sm font-semibold text-slate-300">No learners match the current filter or search criteria.</p>
+                            <p className="text-xs text-slate-500">Learners who sign in via Google will automatically appear here in real time.</p>
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      ) : (
+                        filteredLearners.map(user => {
+                          const enrollments = storage.getEnrollmentsByUser(user.id);
+                          const genAIProg = storage.calculateLearnerProgress(user.id, 'track-genai');
+                          const agenticProg = storage.calculateLearnerProgress(user.id, 'track-agentic');
+
+                          // Detect device characteristics
+                          const isMobile = user.device_info?.device_type === 'Mobile' || 
+                                           user.device_info?.device_type === 'Tablet' ||
+                                           (user.last_device && (user.last_device.includes('Mobile') || user.last_device.includes('iPhone') || user.last_device.includes('Android')));
+                          
+                          const deviceSummary = user.device_info?.summary || user.last_device || 'Web Client';
+                          const browserName = user.device_info?.browser || 'Browser';
+                          const osName = user.device_info?.os || 'Any OS';
+
+                          // Active presence detection (within last 30 minutes)
+                          const lastLoginMs = user.last_login_at ? new Date(user.last_login_at).getTime() : 0;
+                          const isOnlineNow = (Date.now() - lastLoginMs) < 30 * 60 * 1000;
+
+                          return (
+                            <tr key={user.id} className="hover:bg-slate-900/70 transition-colors">
+                              
+                              {/* Learner Identity */}
+                              <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  {user.photo_url ? (
+                                    <img 
+                                      src={user.photo_url} 
+                                      alt={user.display_name} 
+                                      className="w-9 h-9 rounded-xl border border-slate-700 object-cover shrink-0" 
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ) : (
+                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-600 to-blue-700 flex items-center justify-center text-white font-bold font-mono text-xs shrink-0">
+                                      {user.display_name.substring(0, 2).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-white text-sm">{user.display_name}</span>
+                                      {isOnlineNow && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-[10px] text-emerald-300 font-mono font-bold">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                          Active Now
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-slate-400 text-xs font-mono block">{user.email}</span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Email Verification Status */}
+                              <td className="p-4">
+                                {user.email_verified ? (
+                                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-800/80 text-emerald-300 text-xs font-medium">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>Verified Google ID</span>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-800/80 text-amber-300 text-xs font-medium">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Verification Required</span>
+                                  </div>
+                                )}
+                                <span className="text-[10px] text-slate-500 block mt-1 font-mono">
+                                  Provider: Google OAuth
+                                </span>
+                              </td>
+
+                              {/* Device & Browser Telemetry */}
+                              <td className="p-4">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 text-white font-medium">
+                                    {isMobile ? (
+                                      <span className="p-1 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/50">
+                                        <Smartphone className="w-3.5 h-3.5" />
+                                      </span>
+                                    ) : (
+                                      <span className="p-1 rounded bg-blue-950 text-blue-400 border border-blue-800/50">
+                                        <Laptop className="w-3.5 h-3.5" />
+                                      </span>
+                                    )}
+                                    <span className="text-xs font-mono">{deviceSummary}</span>
+                                  </div>
+
+                                  <div className="text-[11px] text-slate-400 flex items-center gap-2 font-mono">
+                                    <span>{browserName}</span>
+                                    <span>·</span>
+                                    <span>{osName}</span>
+                                    {user.device_info?.screen_resolution && (
+                                      <>
+                                        <span>·</span>
+                                        <span className="text-slate-500">{user.device_info.screen_resolution}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Last Activity */}
+                              <td className="p-4 font-mono text-slate-300">
+                                {user.last_login_at ? (
+                                  <div>
+                                    <span className="block text-xs font-bold text-slate-200">
+                                      {new Date(user.last_login_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 block">
+                                      {new Date(user.last_login_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-500 text-xs">Recently joined</span>
+                                )}
+                              </td>
+
+                              {/* Mission Progress */}
+                              <td className="p-4 font-mono">
+                                <div className="space-y-1.5 w-36">
+                                  <div>
+                                    <div className="flex justify-between text-[10px] mb-0.5">
+                                      <span className="text-slate-400">GenAI</span>
+                                      <span className="text-cyan-400 font-bold">{genAIProg.percentage}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                      <div 
+                                        className="bg-cyan-500 h-full rounded-full transition-all" 
+                                        style={{ width: `${genAIProg.percentage}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="flex justify-between text-[10px] mb-0.5">
+                                      <span className="text-slate-400">Agentic</span>
+                                      <span className="text-blue-400 font-bold">{agenticProg.percentage}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                      <div 
+                                        className="bg-blue-500 h-full rounded-full transition-all" 
+                                        style={{ width: `${agenticProg.percentage}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Admin Actions */}
+                              <td className="p-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setCertLearnerId(user.id);
+                                      setActiveTab('credentials');
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors"
+                                    title="Issue completion certificate"
+                                  >
+                                    Credential
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSubmissionLearnerFilter(user.id);
+                                      setActiveTab('assignments');
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors"
+                                    title="Review learner deliverables"
+                                  >
+                                    Reviews
+                                  </button>
+                                </div>
+                              </td>
+
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ---------------------------------------------------- */}
         {/* TAB 5: CURRICULUM EDITOR */}

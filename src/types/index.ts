@@ -1,15 +1,27 @@
 export type UserRole = 'learner' | 'admin';
 export type AccountStatus = 'active' | 'suspended';
 
+export interface DeviceInfo {
+  device_type: 'Mobile' | 'Tablet' | 'Laptop / Desktop';
+  browser: string;
+  os: string;
+  summary: string;
+  user_agent?: string;
+  screen_resolution?: string;
+}
+
 export interface User {
   id: string;
   auth_provider: 'google' | 'admin';
   provider_user_id: string;
   email: string;
+  email_verified?: boolean;
   display_name: string;
   photo_url?: string;
   role: UserRole;
   account_status: AccountStatus;
+  device_info?: DeviceInfo;
+  last_device?: string;
   created_at: string;
   updated_at: string;
   last_login_at: string;

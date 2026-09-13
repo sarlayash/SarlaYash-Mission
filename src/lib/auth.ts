@@ -1,5 +1,13 @@
 import { User, LearnerProfile } from '../types';
 import { storage } from './storage';
+import { getDeviceInfo } from './device';
+import { 
+  signInWithGoogleFirebase, 
+  syncLearnerToFirestore, 
+  sendEmailVerificationToCurrent, 
+  reloadCurrentUserVerification,
+  firebaseAuth 
+} from './firebase';
 
 export interface AuthState {
   user: User | null;
@@ -27,17 +35,91 @@ export const auth = {
     };
   },
 
-  // Google Sign-In for learners
+  // Real Google Sign-In with Firebase Authentication
+  loginWithGoogleFirebase: async (): Promise<{ user: User; isNewUser: boolean }> => {
+    const { appUser, isNewUser } = await signInWithGoogleFirebase();
+
+    // Check if user exists locally
+    const existing = storage.getUsers().find(u => u.email.toLowerCase() === appUser.email.toLowerCase() || u.id === appUser.id);
+    
+    if (existing) {
+      existing.last_login_at = new Date().toISOString();
+      existing.device_info = appUser.device_info;
+      existing.last_device = appUser.last_device;
+      existing.email_verified = appUser.email_verified;
+      storage.saveUser(existing);
+      storage.setCurrentUser(existing);
+      storage.logAudit(existing.id, 'USER_LOGIN', 'User', existing.id, { 
+        provider: 'google_firebase',
+        device: appUser.last_device 
+      });
+      return { user: existing, isNewUser: false };
+    }
+
+    // Save newly created user
+    storage.saveUser(appUser);
+
+    // Initial learner profile
+    const newProfile: LearnerProfile = {
+      id: `prof-${appUser.id}`,
+      user_id: appUser.id,
+      country: 'India',
+      preferred_language: 'English',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+      onboarding_completed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    storage.saveProfile(newProfile);
+
+    storage.setCurrentUser(appUser);
+    storage.logAudit(appUser.id, 'USER_REGISTERED', 'User', appUser.id, { 
+      provider: 'google_firebase', 
+      email: appUser.email,
+      device: appUser.last_device
+    });
+
+    // Send welcome notification
+    storage.saveNotification({
+      id: `notif-${Date.now()}`,
+      user_id: appUser.id,
+      title: 'Welcome to Zero-To-Infinity Learning Mission',
+      body: 'Welcome aboard! Choose your track (Generative AI or Agentic AI) to begin the 30-day journey.',
+      type: 'welcome',
+      delivery_channel: 'in_app',
+      status: 'delivered',
+      sent_at: new Date().toISOString(),
+      created_by: 'system',
+      created_at: new Date().toISOString()
+    });
+
+    return { user: appUser, isNewUser: true };
+  },
+
+  // Fallback Google Sign-In (syncs to Firebase and records device info)
   loginWithGoogle: (mockEmail?: string, mockName?: string, mockPhoto?: string): { user: User; isNewUser: boolean } => {
     const email = mockEmail || 'learner.kapil@gmail.com';
     const displayName = mockName || email.split('@')[0].replace('.', ' ');
     const existingUser = storage.getUsers().find(u => u.email.toLowerCase() === email.toLowerCase());
+    const deviceInfo = getDeviceInfo();
+    const isAdminEmail = email.toLowerCase() === 'kapilnarula27july@gmail.com';
 
     if (existingUser) {
       existingUser.last_login_at = new Date().toISOString();
+      existingUser.device_info = deviceInfo;
+      existingUser.last_device = deviceInfo.summary;
+      existingUser.email_verified = true;
+      if (isAdminEmail) {
+        existingUser.role = 'admin';
+      }
       storage.saveUser(existingUser);
       storage.setCurrentUser(existingUser);
-      storage.logAudit(existingUser.id, 'USER_LOGIN', 'User', existingUser.id, { provider: 'google' });
+      storage.logAudit(existingUser.id, 'USER_LOGIN', 'User', existingUser.id, { 
+        provider: 'google',
+        device: deviceInfo.summary
+      });
+      // Sync to Firebase in background
+      syncLearnerToFirestore(existingUser).catch(() => {});
       return { user: existingUser, isNewUser: false };
     }
 
@@ -47,10 +129,13 @@ export const auth = {
       auth_provider: 'google',
       provider_user_id: providerId,
       email,
+      email_verified: true, // Google accounts have verified emails
       display_name: displayName,
       photo_url: mockPhoto || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`,
-      role: 'learner',
+      role: isAdminEmail ? 'admin' : 'learner',
       account_status: 'active',
+      device_info: deviceInfo,
+      last_device: deviceInfo.summary,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       last_login_at: new Date().toISOString()
@@ -72,7 +157,11 @@ export const auth = {
     storage.saveProfile(newProfile);
 
     storage.setCurrentUser(newUser);
-    storage.logAudit(newUser.id, 'USER_REGISTERED', 'User', newUser.id, { provider: 'google', email });
+    storage.logAudit(newUser.id, 'USER_REGISTERED', 'User', newUser.id, { 
+      provider: 'google', 
+      email,
+      device: deviceInfo.summary 
+    });
 
     // Send welcome notification
     storage.saveNotification({
@@ -87,6 +176,9 @@ export const auth = {
       created_by: 'system',
       created_at: new Date().toISOString()
     });
+
+    // Sync to Firebase
+    syncLearnerToFirestore(newUser).catch(() => {});
 
     return { user: newUser, isNewUser: true };
   },
@@ -183,5 +275,6 @@ export const auth = {
       storage.logAudit(user.id, 'USER_LOGOUT', 'User', user.id);
     }
     storage.setCurrentUser(null);
+    firebaseAuth.signOut().catch(() => {});
   }
 };
