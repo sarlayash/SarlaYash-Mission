@@ -23,7 +23,7 @@ export const DemoModeBanner: React.FC<DemoModeBannerProps> = ({ isDemo, onRefres
   };
 
   return (
-    <div className="bg-slate-900/90 border-b border-slate-800 text-xs text-slate-300 py-1.5 px-4 backdrop-blur-md sticky top-0 z-50">
+    <div className="bg-slate-900/90 border-b border-slate-800 text-xs text-slate-300 py-1.5 px-4 backdrop-blur-md sticky top-0 z-50 no-print print:hidden">
       <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] font-semibold ${

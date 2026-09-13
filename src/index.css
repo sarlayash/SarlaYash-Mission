@@ -15,11 +15,60 @@
 }
 
 @media print {
-  body {
-    background: white !important;
-    color: black !important;
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
   }
-  .no-print {
+
+  html, body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 12pt;
+  }
+
+  /* Universal hide for non-printable chrome */
+  .no-print,
+  header,
+  footer,
+  nav,
+  button,
+  form,
+  input {
     display: none !important;
+  }
+
+  /* Reset layout wrappers to isolate certificate */
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .min-h-screen {
+    min-height: auto !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+  }
+
+  /* Printable Certificate container */
+  .certificate-print-area {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background: white !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+  }
+
+  .print-only {
+    display: block !important;
   }
 }
