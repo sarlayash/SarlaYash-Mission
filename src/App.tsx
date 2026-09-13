@@ -87,7 +87,7 @@ export default function App() {
 
   // Route parser
   const renderContent = () => {
-    const path = currentPath;
+    const path = currentPath || '/';
 
     // 1. Verification Routes
     if (path.startsWith('/verify/certificate/')) {
@@ -278,6 +278,18 @@ export default function App() {
       return <LegalPages page={path as any} onNavigate={navigate} />;
     }
 
+    if (path === '/notifications') {
+      if (currentUser) {
+        return (
+          <LearnerDashboard
+            user={currentUser}
+            onNavigate={navigate}
+            onOpenPayment={handleOpenPayment}
+          />
+        );
+      }
+    }
+
     // Default: Landing Page
     return (
       <LandingPage
@@ -297,6 +309,8 @@ export default function App() {
       {/* Persistent Navigation */}
       <Navbar
         currentUser={currentUser}
+        currentRoute={currentPath}
+        unreadNotificationsCount={currentUser ? storage.getNotifications(currentUser.id).filter(n => n.status !== 'read').length : 0}
         onNavigate={navigate}
         onOpenLogin={handleOpenLogin}
         onLogout={handleLogout}

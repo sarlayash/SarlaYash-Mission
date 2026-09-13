@@ -709,6 +709,15 @@ export const storage = {
     all.unshift(notification);
     saveToStorage(STORAGE_KEYS.NOTIFICATIONS, all);
   },
+  markNotificationsAsRead: (userId: string) => {
+    const all = getFromStorage<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+    all.forEach(n => {
+      if (!n.user_id || n.user_id === userId) {
+        n.status = 'read';
+      }
+    });
+    saveToStorage(STORAGE_KEYS.NOTIFICATIONS, all);
+  },
 
   // Email Logs
   getEmailLogs: (): EmailLog[] => getFromStorage<EmailLog[]>(STORAGE_KEYS.EMAIL_LOGS, []),
@@ -836,7 +845,7 @@ export const storage = {
     // Submissions submitted today (real timestamp comparison)
     const todayStr = new Date().toISOString().split('T')[0];
     const submissions = storage.getSubmissions();
-    const submissionsToday = submissions.filter(s => s.submitted_at.startsWith(todayStr)).length;
+    const submissionsToday = submissions.filter(s => s.submitted_at && s.submitted_at.startsWith(todayStr)).length;
     const pendingReviews = submissions.filter(s => s.status === 'submitted').length;
 
     const badgesIssued = storage.getLearnerBadges().filter(b => !b.revoked_at).length;

@@ -14,11 +14,12 @@ import {
   Bell,
   FileCheck
 } from 'lucide-react';
-import { User } from '../../types';
+import { User, NotificationItem } from '../../types';
+import { storage } from '../../lib/storage';
 
 interface NavbarProps {
   currentUser: User | null;
-  currentRoute: string;
+  currentRoute?: string;
   onNavigate: (route: string) => void;
   onOpenLogin: (isAdmin?: boolean) => void;
   onLogout: () => void;
@@ -27,7 +28,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
-  currentRoute,
+  currentRoute = typeof window !== 'undefined' ? (window.location.pathname || '/') : '/',
   onNavigate,
   onOpenLogin,
   onLogout,
@@ -35,6 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const navItems = [
     { label: 'Explore Tracks', route: '/tracks' },
@@ -86,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => handleNav('/admin')}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    currentRoute.startsWith('/admin') ? 'text-cyan-400 bg-slate-900 border border-slate-700' : 'text-slate-300 hover:text-white hover:bg-slate-900/50'
+                    currentRoute?.startsWith('/admin') ? 'text-cyan-400 bg-slate-900 border border-slate-700' : 'text-slate-300 hover:text-white hover:bg-slate-900/50'
                   }`}
                 >
                   Admin Portal
@@ -153,16 +155,63 @@ export const Navbar: React.FC<NavbarProps> = ({
             {currentUser ? (
               <div className="flex items-center gap-3 relative">
                 {currentUser.role === 'learner' && (
-                  <button
-                    onClick={() => handleNav('/notifications')}
-                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg relative transition-colors"
-                    title="Notifications"
-                  >
-                    <Bell className="w-5 h-5" />
-                    {unreadNotificationsCount > 0 && (
-                      <span className="absolute top-1 right-1 w-2 h-2 bg-cyan-500 rounded-full ring-2 ring-slate-950" />
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setNotificationsOpen(!notificationsOpen);
+                        setUserDropdownOpen(false);
+                      }}
+                      className="p-2 text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg relative transition-colors"
+                      title="Notifications"
+                    >
+                      <Bell className="w-5 h-5" />
+                      {unreadNotificationsCount > 0 && (
+                        <span className="absolute top-1 right-1 w-2 h-2 bg-cyan-500 rounded-full ring-2 ring-slate-950 animate-pulse" />
+                      )}
+                    </button>
+
+                    {notificationsOpen && (
+                      <div className="absolute right-0 top-12 w-80 sm:w-96 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                          <span className="text-xs font-bold text-white uppercase tracking-wider">Notifications</span>
+                          <span className="text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 font-mono">
+                            {unreadNotificationsCount} New
+                          </span>
+                        </div>
+                        <div className="max-h-72 overflow-y-auto space-y-2">
+                          {storage.getNotifications(currentUser.id).length === 0 ? (
+                            <p className="text-xs text-slate-500 text-center py-4">No notifications yet.</p>
+                          ) : (
+                            storage.getNotifications(currentUser.id).slice(0, 5).map((notif: NotificationItem) => (
+                              <div
+                                key={notif.id}
+                                className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 text-xs space-y-1"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-slate-200">{notif.title}</span>
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    {new Date(notif.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <p className="text-slate-400 text-[11px] leading-relaxed">{notif.body}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-slate-800 flex justify-end">
+                          <button
+                            onClick={() => {
+                              storage.markNotificationsAsRead(currentUser.id);
+                              setNotificationsOpen(false);
+                            }}
+                            className="text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold"
+                          >
+                            Mark all as read
+                          </button>
+                        </div>
+                      </div>
                     )}
-                  </button>
+                  </div>
                 )}
 
                 <button
