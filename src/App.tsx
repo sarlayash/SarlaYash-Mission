@@ -26,7 +26,12 @@ export default function App() {
   // Modals state
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginModalIsAdmin, setLoginModalIsAdmin] = useState(false);
-  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(() => {
+    const user = auth.getCurrentUser();
+    if (!user || user.role === 'admin') return false;
+    const profile = storage.getProfileByUserId(user.id);
+    return profile ? !profile.onboarding_completed : false;
+  });
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentSelectedTrack, setPaymentSelectedTrack] = useState<Track | null>(null);
 
@@ -53,11 +58,14 @@ export default function App() {
   const handleLoginSuccess = (user: User, isNewUser: boolean) => {
     setCurrentUser(user);
     if (user.role === 'admin') {
+      setOnboardingModalOpen(false);
       navigate('/admin');
     } else {
       const profile = storage.getProfileByUserId(user.id);
-      if (isNewUser || !profile?.onboarding_completed) {
+      if (isNewUser || !profile || !profile.onboarding_completed) {
         setOnboardingModalOpen(true);
+      } else {
+        setOnboardingModalOpen(false);
       }
       navigate('/dashboard');
     }
@@ -66,6 +74,7 @@ export default function App() {
   const handleLogout = () => {
     auth.logout();
     setCurrentUser(null);
+    setOnboardingModalOpen(false);
     navigate('/');
   };
 
@@ -332,10 +341,11 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess}
       />
 
-      {currentUser && (
+      {currentUser && onboardingModalOpen && (
         <OnboardingModal
           user={currentUser}
           onComplete={() => setOnboardingModalOpen(false)}
+          onClose={() => setOnboardingModalOpen(false)}
         />
       )}
 

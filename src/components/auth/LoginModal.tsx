@@ -44,6 +44,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tempAdminUser, setTempAdminUser] = useState<User | null>(null);
 
+  // Close on escape key
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleGoogleSignIn = () => {
@@ -108,7 +120,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden relative">
         
         {/* Close Button */}
@@ -217,7 +236,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </form>
           ) : !isAdminTab ? (
             /* Learner Google Login Section */
-            <div className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); handleGoogleSignIn(); }} className="space-y-4">
               <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300 leading-relaxed">
                 <p className="font-semibold text-white mb-1 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-cyan-400" />
@@ -250,9 +269,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               </div>
 
               <button
-                onClick={handleGoogleSignIn}
+                type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm bg-white hover:bg-slate-100 text-slate-900 transition-all flex items-center justify-center gap-2.5 shadow-md shadow-white/5 active:scale-[0.99]"
+                className="w-full py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm bg-white hover:bg-slate-100 text-slate-900 transition-all flex items-center justify-center gap-2.5 shadow-md shadow-white/5 active:scale-[0.99] disabled:opacity-75 cursor-pointer"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -262,7 +281,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 </svg>
                 {isSubmitting ? 'Authenticating with Google...' : 'Continue with Google Account'}
               </button>
-            </div>
+            </form>
           ) : (
             /* Admin Login Section */
             <form onSubmit={handleAdminSignIn} className="space-y-4">
