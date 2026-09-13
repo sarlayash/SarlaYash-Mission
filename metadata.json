@@ -1,6 +1,11 @@
 {
   "name": "Zero-To-Infinity",
   "description": "Generative AI + Agentic AI · 30-Day Learning Mission powered by Kapil under SarlaYash Mission.",
-  "requestFramePermissions": ["camera", "microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

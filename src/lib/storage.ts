@@ -17,6 +17,7 @@ import {
   PlatformSettings
 } from '../types';
 import { INITIAL_TRACKS, INITIAL_BADGES, generateTrackDays } from '../data/curriculumData';
+import { DEMO_CERTIFICATES, DEMO_LEARNER_BADGES } from '../data/demoCredentials';
 
 const STORAGE_KEYS = {
   USERS: 'zti_users',
@@ -481,6 +482,35 @@ export const storage = {
     }
     saveToStorage(STORAGE_KEYS.PAYMENTS, all);
   },
+  // Check if learner has paid daily 1 rupee for a specific day
+  hasPaidForDay: (userId: string, trackId: string, dayNumber: number): boolean => {
+    const user = storage.getUsers().find(u => u.id === userId);
+    if (user?.role === 'admin') return true;
+
+    // Day 1 can also be verified by track enrollment payment
+    if (dayNumber === 1) {
+      const enrollment = storage.getEnrollment(userId, trackId);
+      if (enrollment?.payment_status === 'verified') return true;
+    }
+
+    // Check specific day payment record
+    const allPayments = storage.getPaymentsByUser(userId);
+    const verifiedDayPayment = allPayments.find(p => 
+      p.verification_status === 'verified' &&
+      (p.day_number === dayNumber || (dayNumber === 1 && !p.day_number)) &&
+      (!p.track_id || p.track_id === trackId)
+    );
+
+    return !!verifiedDayPayment;
+  },
+  // Get payment status for a specific day
+  getDayPayment: (userId: string, trackId: string, dayNumber: number): Payment | undefined => {
+    const allPayments = storage.getPaymentsByUser(userId);
+    return allPayments.find(p => 
+      (p.day_number === dayNumber || (dayNumber === 1 && !p.day_number)) &&
+      (!p.track_id || p.track_id === trackId)
+    );
+  },
   verifyPayment: (paymentId: string, verifiedByUserId: string) => {
     const payment = storage.getPaymentById(paymentId);
     if (!payment) return;
@@ -651,7 +681,9 @@ export const storage = {
     return all.filter(b => b.user_id === userId);
   },
   getLearnerBadgeByCredentialId: (credentialId: string): LearnerBadge | undefined => {
-    return storage.getLearnerBadges().find(b => b.credential_id === credentialId);
+    const found = storage.getLearnerBadges().find(b => b.credential_id === credentialId);
+    if (found) return found;
+    return DEMO_LEARNER_BADGES.find(b => b.credential_id === credentialId);
   },
   saveLearnerBadge: (badge: LearnerBadge) => {
     const all = storage.getLearnerBadges();
@@ -671,7 +703,9 @@ export const storage = {
     return all.filter(c => c.user_id === userId);
   },
   getCertificateByNumber: (certNumber: string): Certificate | undefined => {
-    return storage.getCertificates().find(c => c.certificate_number === certNumber);
+    const found = storage.getCertificates().find(c => c.certificate_number === certNumber);
+    if (found) return found;
+    return DEMO_CERTIFICATES.find(c => c.certificate_number === certNumber);
   },
   saveCertificate: (certificate: Certificate) => {
     const all = storage.getCertificates();
@@ -696,6 +730,81 @@ export const storage = {
       reason,
       certificate_number: cert.certificate_number
     });
+  },
+
+  // Review-Gated Credential Enforcement:
+  // "ADMIN CAN ASSIGN BADGES AND CERTIFICATES ONLY AFTER REVIEW."
+  getReviewedSubmissionsByUser: (userId: string): AssignmentSubmission[] => {
+    return storage.getSubmissionsByUser(userId).filter(s => s.status === 'reviewed');
+  },
+  canAssignCredentials: (userId: string): boolean => {
+    return storage.getReviewedSubmissionsByUser(userId).length > 0;
+  },
+  assignBadgeAfterReview: (
+    userId: string,
+    badgeId: string,
+    reviewedSubmissionId: string,
+    adminUserId: string
+  ): { success: boolean; message: string; badge?: LearnerBadge } => {
+    const submission = storage.getSubmissions().find(s => s.id === reviewedSubmissionId);
+    if (!submission || submission.status !== 'reviewed') {
+      return {
+        success: false,
+        message: 'Policy Violation: Badges can only be assigned after an assignment has been reviewed and approved.'
+      };
+    }
+
+    // Check if learner already has this badge
+    const existing = storage.getLearnerBadges(userId).find(b => b.badge_id === badgeId);
+    if (existing) {
+      return {
+        success: false,
+        message: 'This badge has already been awarded to the learner.'
+      };
+    }
+
+    const badgeDef = storage.getBadges().find(b => b.id === badgeId);
+    const badgeSlug = badgeDef?.slug || 'comp';
+    const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const credentialId = `BADGE-${badgeSlug.toUpperCase().slice(0, 8)}-${randomHex}`;
+    
+    const newLearnerBadge: LearnerBadge = {
+      id: `lbadge-${Date.now()}-${randomHex.toLowerCase()}`,
+      user_id: userId,
+      badge_id: badgeId,
+      issued_at: new Date().toISOString(),
+      credential_id: credentialId,
+      verification_token: `token-${credentialId.toLowerCase()}-${Date.now()}`,
+      created_at: new Date().toISOString()
+    };
+
+    storage.saveLearnerBadge(newLearnerBadge);
+
+    storage.logAudit(adminUserId, 'BADGE_AWARDED_AFTER_REVIEW', 'LearnerBadge', newLearnerBadge.id, {
+      badge_id: badgeId,
+      user_id: userId,
+      reviewed_submission_id: reviewedSubmissionId,
+      credential_id: credentialId
+    });
+
+    storage.saveNotification({
+      id: `notif-${Date.now()}`,
+      user_id: userId,
+      title: `Competency Badge Awarded: ${badgeDef?.name || 'Verified Badge'}`,
+      body: `Instructor Kapil awarded you this badge after reviewing your deliverable! Verifiable ID: ${credentialId}.`,
+      type: 'assignment',
+      delivery_channel: 'in_app',
+      status: 'delivered',
+      sent_at: new Date().toISOString(),
+      created_by: adminUserId,
+      created_at: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      message: `Badge "${badgeDef?.name}" assigned successfully after review!`,
+      badge: newLearnerBadge
+    };
   },
 
   // Notifications

@@ -34,6 +34,7 @@ export default function App() {
   });
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentSelectedTrack, setPaymentSelectedTrack] = useState<Track | null>(null);
+  const [paymentSelectedDay, setPaymentSelectedDay] = useState<number | undefined>(undefined);
 
   // Sync route on popstate (browser back/forward)
   useEffect(() => {
@@ -78,12 +79,13 @@ export default function App() {
     navigate('/');
   };
 
-  const handleOpenPayment = (track: Track) => {
+  const handleOpenPayment = (track: Track, dayNumber?: number) => {
     if (!currentUser) {
       handleOpenLogin(false);
       return;
     }
     setPaymentSelectedTrack(track);
+    setPaymentSelectedDay(dayNumber);
     setPaymentModalOpen(true);
   };
 
@@ -354,11 +356,14 @@ export default function App() {
           isOpen={paymentModalOpen}
           user={currentUser}
           track={paymentSelectedTrack}
+          dayNumber={paymentSelectedDay}
           onClose={() => {
             setPaymentModalOpen(false);
             setPaymentSelectedTrack(null);
+            setPaymentSelectedDay(undefined);
           }}
           onPaymentSubmitted={() => {
+            setPaymentSelectedDay(undefined);
             navigate('/dashboard');
           }}
         />

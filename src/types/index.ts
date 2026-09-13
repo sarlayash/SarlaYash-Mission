@@ -99,6 +99,8 @@ export interface Payment {
   id: string;
   user_id: string;
   enrollment_id: string;
+  track_id?: string;
+  day_number?: number;
   amount: number;
   currency: string;
   payment_method: 'UPI' | 'GATEWAY' | 'CARD';

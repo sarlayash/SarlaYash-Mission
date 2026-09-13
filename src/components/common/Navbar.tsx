@@ -233,6 +233,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </button>
 
+                {/* Explicit Log Off Button for Learner and Admin */}
+                <button
+                  onClick={onLogout}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-800 hover:bg-rose-950/40 hover:border-rose-800/60 text-slate-300 hover:text-rose-300 transition-all flex items-center gap-1.5 shadow-sm"
+                  title="Sign out or log off your account"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                  <span className="hidden md:inline">Log Off</span>
+                </button>
+
                 {/* Dropdown */}
                 {userDropdownOpen && (
                   <div className="absolute right-0 top-12 w-56 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
@@ -404,9 +414,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
                 <button
                   onClick={onLogout}
-                  className="px-3 py-1.5 rounded-lg text-xs text-rose-400 bg-rose-950/30 border border-rose-900/40"
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-400 bg-rose-950/40 border border-rose-900/40 hover:bg-rose-900/50 flex items-center gap-1.5"
                 >
-                  Sign Out
+                  <LogOut className="w-3.5 h-3.5" />
+                  Log Off
                 </button>
               </div>
             ) : (

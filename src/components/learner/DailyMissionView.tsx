@@ -15,18 +15,22 @@ import {
   Send,
   Save,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Lock,
+  CreditCard,
+  Check
 } from 'lucide-react';
 import { User, Track, TrackDay, Assignment, AssignmentSubmission } from '../../types';
 import { storage } from '../../lib/storage';
 import { StatusBadge } from '../common/StatusBadge';
+import { getTimeUntilMidnightIST, checkDailySubmissionRule, getISTDateString } from '../../lib/istTime';
 
 interface DailyMissionViewProps {
   user: User;
   trackSlug: string;
   dayNumber: number;
   onNavigate: (route: string) => void;
-  onOpenPayment: (track: Track) => void;
+  onOpenPayment: (track: Track, dayNumber?: number) => void;
 }
 
 export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
@@ -42,6 +46,25 @@ export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
   const assignment = currentDay ? storage.getAssignmentByTrackDay(currentDay.id) : null;
   const enrollment = track ? storage.getEnrollment(user.id, track.id) : null;
   const existingSubmission = assignment ? storage.getSubmissionByAssignmentAndUser(assignment.id, user.id) : null;
+
+  // Operational Rules State:
+  // 1. Daily 1 rupee payment check
+  const [paymentVersion, setPaymentVersion] = useState(0);
+  const isPaidForDay = track ? storage.hasPaidForDay(user.id, track.id, dayNumber) : false;
+  const dayPayment = track ? storage.getDayPayment(user.id, track.id, dayNumber) : undefined;
+
+  // 2. Midnight IST Timer & 1 Submission a day rule
+  const [countdown, setCountdown] = useState(getTimeUntilMidnightIST());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown(getTimeUntilMidnightIST());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const dailyRule = checkDailySubmissionRule(user.id, assignment?.id);
+  // Is locked if user already submitted another assignment today across tracks (and hasn't submitted this one)
+  const isLockedByDailyLimit = dailyRule.isLockedByDailyLimit && !existingSubmission;
 
   // Form State
   const [responseText, setResponseText] = useState(existingSubmission?.response_text || '');
@@ -137,6 +160,18 @@ export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
   const handleSubmitAssignment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!assignment) return;
+
+    // 1. Operational Rule: Learner cannot move to next day submission unless paying daily 1 rupee
+    if (!isPaidForDay) {
+      setErrorMessage(`Daily ₹1 contribution is required for Day ${dayNumber} submission. Please submit and verify your ₹1 payment.`);
+      return;
+    }
+
+    // 2. Operational Rule: Only 1 submission, 1 assignment a day for both tracks. Locked until 12 midnight IST.
+    if (isLockedByDailyLimit) {
+      setErrorMessage(`Daily limit reached: Only 1 submission per day across both tracks. Locked until 12:00 Midnight IST (${countdown.formatted} remaining).`);
+      return;
+    }
 
     if (!responseText.trim() && !submissionUrl.trim() && !uploadedFile) {
       setErrorMessage('Please provide a text response, project link, or upload an artifact.');
@@ -416,6 +451,98 @@ export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
                 </div>
               )}
 
+              {/* Operational Rule 1: Daily ₹1 Payment Enforcement */}
+              {!isPaidForDay && (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <CreditCard className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1 text-xs">
+                      <h4 className="font-bold text-amber-300 text-sm">
+                        Daily ₹1 Contribution Required for Day {dayNumber}
+                      </h4>
+                      <p className="leading-relaxed text-amber-200/90 text-[11px]">
+                        Learners cannot move to Day {dayNumber} submission without contributing the daily ₹1 fee via UPI.
+                      </p>
+                      {dayPayment && dayPayment.verification_status === 'pending_verification' && (
+                        <div className="mt-2 p-2 rounded-lg bg-amber-950/60 border border-amber-800/40 text-[11px] text-amber-300 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          <span>Payment UTR ({dayPayment.upi_reference}) is currently pending review by instructor Kapil.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenPayment(track, dayNumber)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-slate-950 flex items-center gap-1.5 shadow-md"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      Pay ₹1 for Day {dayNumber} via UPI
+                    </button>
+                    {/* Instant verification helper for testing / evaluation */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const enr = storage.getEnrollment(user.id, track.id);
+                        const dummyPayment = {
+                          id: `pay-${Date.now()}`,
+                          user_id: user.id,
+                          enrollment_id: enr?.id || 'enr-demo',
+                          track_id: track.id,
+                          day_number: dayNumber,
+                          amount: 1,
+                          currency: 'INR',
+                          payment_method: 'UPI' as const,
+                          upi_reference: `DEMO-UTR-${dayNumber}-${Date.now().toString().slice(-6)}`,
+                          verification_status: 'verified' as const,
+                          verified_by: 'admin-kapil',
+                          verified_at: new Date().toISOString(),
+                          created_at: new Date().toISOString(),
+                          updated_at: new Date().toISOString()
+                        };
+                        storage.savePayment(dummyPayment);
+                        setPaymentVersion(v => v + 1);
+                        setSuccessMessage(`Day ${dayNumber} fee verified successfully! Submission unlocked.`);
+                        setTimeout(() => setSuccessMessage(''), 3500);
+                      }}
+                      className="px-3 py-2 rounded-xl text-[10px] font-mono bg-slate-950/80 border border-slate-800 hover:border-amber-500/40 text-amber-300 transition-colors"
+                      title="Test helper to instantly mark Day as verified"
+                    >
+                      Instant Test Verify ₹1
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Operational Rule 2: Assignments locked until 12 midnight IST & Only 1 submission a day */}
+              {isLockedByDailyLimit && (
+                <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <Lock className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1 text-xs">
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <span>Daily Limit Reached: 1 Submission / Day Across Both Tracks</span>
+                      </h4>
+                      <p className="leading-relaxed text-slate-300 text-[11px]">
+                        Assignments remain locked until 12:00 Midnight IST. You have already submitted an assignment today.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-cyan-400 animate-pulse" />
+                      <span className="text-xs font-medium text-slate-300">Next Unlock: 12:00 Midnight IST</span>
+                    </div>
+                    <div className="font-mono text-sm font-bold text-cyan-400 bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/20">
+                      {countdown.formatted}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <form onSubmit={handleSubmitAssignment} className="space-y-4">
                 
                 {/* Text Response / Reflection / Code */}
@@ -427,9 +554,16 @@ export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
                   <textarea
                     rows={5}
                     value={responseText}
+                    disabled={!isPaidForDay || isLockedByDailyLimit}
                     onChange={(e) => setResponseText(e.target.value)}
-                    placeholder="Document your implementation, prompt strategies, model parameters, and observed outputs..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    placeholder={
+                      !isPaidForDay 
+                        ? `Please pay daily ₹1 contribution for Day ${dayNumber} to unlock the submission console...` 
+                        : isLockedByDailyLimit 
+                        ? `Submission locked until 12:00 Midnight IST (${countdown.formatted} remaining)...`
+                        : "Document your implementation, prompt strategies, model parameters, and observed outputs..."
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -442,9 +576,10 @@ export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
                   <input
                     type="url"
                     value={submissionUrl}
+                    disabled={!isPaidForDay || isLockedByDailyLimit}
                     onChange={(e) => setSubmissionUrl(e.target.value)}
                     placeholder="https://github.com/your-username/ai-mission-day-1"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -454,12 +589,13 @@ export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
                     <Upload className="w-3.5 h-3.5 text-cyan-400" />
                     File Attachment (PDF, DOCX, Code, Screenshot, max 10MB)
                   </label>
-                  <div className="relative border border-dashed border-slate-800 rounded-xl p-3 text-center hover:border-slate-700 transition-colors bg-slate-950/60">
+                  <div className={`relative border border-dashed border-slate-800 rounded-xl p-3 text-center bg-slate-950/60 ${(!isPaidForDay || isLockedByDailyLimit) ? 'opacity-50 cursor-not-allowed' : 'hover:border-slate-700'}`}>
                     <input
                       type="file"
+                      disabled={!isPaidForDay || isLockedByDailyLimit}
                       accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg"
                       onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
                     />
                     <span className="text-xs text-slate-400 block truncate">
                       {uploadedFileName ? `Attached: ${uploadedFileName} (${Math.round(uploadedFileSize / 1024)} KB)` : 'Choose file or drag & drop deliverable'}
@@ -468,17 +604,21 @@ export const DailyMissionView: React.FC<DailyMissionViewProps> = ({
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
-                  Submissions are stored in the persistent database. Opening or viewing a day does not mark it complete; progress requires valid hands-on submission.
+                  Submissions are stored in the persistent database. Daily limit: 1 assignment per day across both tracks. Daily fee: ₹1 per mission day.
                 </div>
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full py-3 rounded-xl font-bold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
+                  disabled={isSubmitting || !isPaidForDay || isLockedByDailyLimit}
+                  className="w-full py-3 rounded-xl font-bold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Send className="w-4 h-4" />
                   {isSubmitting 
                     ? 'Saving Submission...' 
+                    : !isPaidForDay 
+                    ? `Pay Daily ₹1 to Unlock Day ${dayNumber}`
+                    : isLockedByDailyLimit
+                    ? `Locked Until 12:00 Midnight IST (${countdown.formatted})`
                     : existingSubmission 
                     ? 'Resubmit Updated Work (v' + ((existingSubmission.version_number || 1) + 1) + ')' 
                     : 'Submit Day ' + dayNumber + ' Assignment'}

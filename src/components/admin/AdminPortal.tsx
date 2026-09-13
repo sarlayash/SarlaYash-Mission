@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Shield, 
+  ShieldCheck,
   Users, 
   CreditCard, 
   FileCheck, 
@@ -11,6 +12,7 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertCircle, 
+  AlertTriangle,
   Search, 
   Download, 
   Plus, 
@@ -91,6 +93,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
   const [certLearnerId, setCertLearnerId] = useState('');
   const [certTrackId, setCertTrackId] = useState(tracks[0]?.id || 'track-genai');
   const [certSuccessNotice, setCertSuccessNotice] = useState('');
+  const [certErrorNotice, setCertErrorNotice] = useState('');
+
+  // ----------------------------------------------------
+  // Review-Gated Badge Issuer State
+  // ----------------------------------------------------
+  const [awardBadgeLearnerId, setAwardBadgeLearnerId] = useState('');
+  const [awardBadgeId, setAwardBadgeId] = useState('');
+  const [awardBadgeSubmissionId, setAwardBadgeSubmissionId] = useState('');
+  const [badgeSuccessNotice, setBadgeSuccessNotice] = useState('');
+  const [badgeErrorNotice, setBadgeErrorNotice] = useState('');
+
+  // Inline grading desk badge selection
+  const [inlineBadgeId, setInlineBadgeId] = useState('');
+  const [inlineBadgeNotice, setInlineBadgeNotice] = useState<{ success: boolean; msg: string } | null>(null);
 
   // ----------------------------------------------------
   // Admin Password Management State
@@ -104,6 +120,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
   const allPayments = storage.getPayments();
   const allSubmissions = storage.getSubmissions();
   const allCertificates = storage.getCertificates();
+  const allBadges = storage.getBadges();
+  const allLearnerBadges = storage.getLearnerBadges();
   const allAuditLogs = storage.getAuditLogs();
 
   // Curated lists
@@ -168,8 +186,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
       reviewGrade
     );
 
+    // If review approved and inline badge selected, assign badge after review
+    if (reviewStatus === 'reviewed' && inlineBadgeId) {
+      storage.assignBadgeAfterReview(
+        activeReviewSub.user_id,
+        inlineBadgeId,
+        activeReviewSub.id,
+        currentUser.id
+      );
+      setInlineBadgeId('');
+    }
+
     setActiveReviewSub(null);
     setReviewFeedback('');
+    triggerRefresh();
+  };
+
+  // Quick Award Badge directly from Grading Desk
+  const handleQuickAwardBadge = (badgeId: string) => {
+    if (!activeReviewSub) return;
+    const res = storage.assignBadgeAfterReview(
+      activeReviewSub.user_id,
+      badgeId,
+      activeReviewSub.id,
+      currentUser.id
+    );
+    setInlineBadgeNotice({ success: res.success, msg: res.message });
+    setTimeout(() => setInlineBadgeNotice(null), 4000);
     triggerRefresh();
   };
 
@@ -231,12 +274,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
     setTimeout(() => setBroadcastSentNotice(false), 3000);
   };
 
-  // Manual Certificate Generation
+  // Manual Certificate Generation (Strict Review-Gated Policy)
   const handleIssueCertificate = (e: React.FormEvent) => {
     e.preventDefault();
     const recipient = allUsers.find(u => u.id === certLearnerId);
     const trackObj = tracks.find(t => t.id === certTrackId);
     if (!recipient || !trackObj) return;
+
+    // Strict Review-Gated Rule: "ADMIN CAN ASSIGN BADGES AND CERTIFICATES ONLY AFTER REVIEW"
+    if (!storage.canAssignCredentials(recipient.id)) {
+      setCertErrorNotice(`Policy Constraint: According to SarlaYash Mission operational rules, certificates can ONLY be assigned after at least one assignment has been reviewed and approved by Kapil. ${recipient.display_name} has 0 reviewed submissions.`);
+      setTimeout(() => setCertErrorNotice(''), 6000);
+      return;
+    }
 
     const certNumber = `ZTI-${trackObj.slug === 'generative-ai' ? 'GENAI' : 'AGENT'}-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const cert: Certificate = {
@@ -263,8 +313,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
     });
 
     setCertSuccessNotice(`Issued Certificate ${certNumber} to ${recipient.display_name}`);
+    setCertErrorNotice('');
     setTimeout(() => setCertSuccessNotice(''), 4000);
     triggerRefresh();
+  };
+
+  // Review-Gated Competency Badge Issuance
+  const handleAssignBadgeAfterReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!awardBadgeLearnerId || !awardBadgeId || !awardBadgeSubmissionId) {
+      setBadgeErrorNotice('Please select learner, reviewed deliverable, and badge.');
+      setTimeout(() => setBadgeErrorNotice(''), 5000);
+      return;
+    }
+
+    const res = storage.assignBadgeAfterReview(
+      awardBadgeLearnerId,
+      awardBadgeId,
+      awardBadgeSubmissionId,
+      currentUser.id
+    );
+
+    if (res.success) {
+      setBadgeSuccessNotice(res.message);
+      setBadgeErrorNotice('');
+      setAwardBadgeId('');
+      setAwardBadgeSubmissionId('');
+      setTimeout(() => setBadgeSuccessNotice(''), 4500);
+      triggerRefresh();
+    } else {
+      setBadgeErrorNotice(res.message);
+      setTimeout(() => setBadgeErrorNotice(''), 5000);
+    }
   };
 
   // Admin Password Change
@@ -745,7 +825,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                         Constructive Instructor Feedback (Kapil)
                       </label>
                       <textarea
-                        rows={4}
+                        rows={3}
                         value={reviewFeedback}
                         onChange={(e) => setReviewFeedback(e.target.value)}
                         placeholder="Provide detailed feedback on prompt clarity, error handling, agent loop design..."
@@ -754,12 +834,82 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                       />
                     </div>
 
+                    {/* Review-Gated Badge Option: Award Upon Approval */}
+                    {reviewStatus === 'reviewed' && (
+                      <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-mono text-cyan-300 flex items-center gap-1.5 font-bold">
+                            <Award className="w-3.5 h-3.5 text-cyan-400" />
+                            Award Badge Upon Approval (Policy: Only After Review)
+                          </label>
+                          <span className="text-[10px] text-slate-400 font-mono">Optional</span>
+                        </div>
+                        <select
+                          value={inlineBadgeId}
+                          onChange={(e) => setInlineBadgeId(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                        >
+                          <option value="">-- Do Not Award Badge Now --</option>
+                          {allBadges.map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.name} ({b.slug})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-slate-400">
+                          Badges can only be assigned after an assignment is reviewed and marked approved.
+                        </p>
+                      </div>
+                    )}
+
+                    {inlineBadgeNotice && (
+                      <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                        inlineBadgeNotice.success 
+                          ? 'bg-emerald-950/40 border border-emerald-800/60 text-emerald-300' 
+                          : 'bg-rose-950/40 border border-rose-800/60 text-rose-300'
+                      }`}>
+                        {inlineBadgeNotice.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                        <span>{inlineBadgeNotice.msg}</span>
+                      </div>
+                    )}
+
                     <button
                       type="submit"
                       className="w-full py-2.5 rounded-xl font-bold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors shadow-lg shadow-cyan-500/20"
                     >
                       Save Evaluation & Notify Learner
                     </button>
+
+                    {/* Quick Badge Award for already reviewed submissions */}
+                    {activeReviewSub.status === 'reviewed' && (
+                      <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                        <span className="text-[11px] font-mono font-bold text-slate-300 block">
+                          Instant Badge Issuance (For This Approved Submission)
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {allBadges.map(bg => {
+                            const alreadyHas = allLearnerBadges.some(lb => lb.user_id === activeReviewSub.user_id && lb.badge_id === bg.id && !lb.revoked_at);
+                            return (
+                              <button
+                                key={bg.id}
+                                type="button"
+                                disabled={alreadyHas}
+                                onClick={() => handleQuickAwardBadge(bg.id)}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all ${
+                                  alreadyHas
+                                    ? 'bg-slate-800/50 text-slate-500 cursor-not-allowed border border-slate-850'
+                                    : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                }`}
+                              >
+                                <Award className="w-3 h-3" />
+                                <span>{bg.name}</span>
+                                {alreadyHas && <span className="text-[9px] text-emerald-400">✓ Earned</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </form>
                 ) : (
                   <div className="p-12 text-center text-slate-500 space-y-2">
@@ -987,15 +1137,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
         {/* ---------------------------------------------------- */}
         {activeTab === 'credentials' && (
           <div className="space-y-6">
+
+            {/* Operational Policy Header */}
+            <div className="p-4 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <span className="font-bold text-cyan-300 uppercase tracking-wide block font-mono">
+                  SarlaYash Mission Operational Mandate: Review-Gated Credentials
+                </span>
+                <p className="text-slate-300">
+                  Admins can assign badges and certificates <strong>only after review</strong>. A learner must have at least one completed assignment reviewed and approved by Kapil before certificates or competency badges can be cryptographically registered.
+                </p>
+              </div>
+            </div>
             
             {/* Manual Certificate Issuer Form */}
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4">
               <h3 className="font-display font-bold text-base text-white flex items-center gap-2">
                 <Award className="w-4 h-4 text-cyan-400" />
-                Issue Official Certificate of Completion
+                Issue Official Certificate of Completion (Review-Gated)
               </h3>
               <p className="text-xs text-slate-400">
-                Generate an immutable cryptographic certificate record signed by Kapil under SarlaYash Mission.
+                Generate an immutable cryptographic certificate record signed by Kapil under SarlaYash Mission. Requires at least 1 reviewed submission.
               </p>
 
               {certSuccessNotice && (
@@ -1005,19 +1168,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                 </div>
               )}
 
+              {certErrorNotice && (
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{certErrorNotice}</span>
+                </div>
+              )}
+
               <form onSubmit={handleIssueCertificate} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-mono text-slate-300 mb-1">Select Learner</label>
                   <select
                     value={certLearnerId}
-                    onChange={(e) => setCertLearnerId(e.target.value)}
+                    onChange={(e) => {
+                      setCertLearnerId(e.target.value);
+                      setCertErrorNotice('');
+                    }}
                     required
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                   >
                     <option value="">-- Choose Learner --</option>
-                    {allUsers.filter(u => u.role === 'learner').map(u => (
-                      <option key={u.id} value={u.id}>{u.display_name} ({u.email})</option>
-                    ))}
+                    {allUsers.filter(u => u.role === 'learner').map(u => {
+                      const reviewedCount = storage.getReviewedSubmissionsByUser(u.id).length;
+                      return (
+                        <option key={u.id} value={u.id}>
+                          {u.display_name} ({reviewedCount} approved reviews)
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -1037,9 +1215,126 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                 <div className="flex items-end">
                   <button
                     type="submit"
-                    className="w-full py-2.5 rounded-xl font-bold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors shadow-md shadow-cyan-500/10"
+                    disabled={Boolean(certLearnerId && !storage.canAssignCredentials(certLearnerId))}
+                    className={`w-full py-2.5 rounded-xl font-bold text-xs transition-colors shadow-md ${
+                      certLearnerId && !storage.canAssignCredentials(certLearnerId)
+                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                        : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/10'
+                    }`}
                   >
                     Generate & Register Certificate
+                  </button>
+                </div>
+              </form>
+
+              {certLearnerId && !storage.canAssignCredentials(certLearnerId) && (
+                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>
+                    <strong>Policy Lock:</strong> This learner has 0 reviewed submissions. Kapil must review and approve at least one assignment before a certificate can be issued.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Review-Gated Badge Issuer Desk */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4">
+              <h3 className="font-display font-bold text-base text-white flex items-center gap-2">
+                <Award className="w-4 h-4 text-emerald-400" />
+                Award Verifiable Competency Badge (Only After Review)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Award cryptographically verifiable skill badges tied directly to an approved assignment review deliverable.
+              </p>
+
+              {badgeSuccessNotice && (
+                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{badgeSuccessNotice}</span>
+                </div>
+              )}
+
+              {badgeErrorNotice && (
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{badgeErrorNotice}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleAssignBadgeAfterReview} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-mono text-slate-300 mb-1">Select Learner</label>
+                    <select
+                      value={awardBadgeLearnerId}
+                      onChange={(e) => {
+                        setAwardBadgeLearnerId(e.target.value);
+                        setAwardBadgeSubmissionId('');
+                        setBadgeErrorNotice('');
+                      }}
+                      required
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="">-- Choose Learner --</option>
+                      {allUsers.filter(u => u.role === 'learner').map(u => {
+                        const reviewedCount = storage.getReviewedSubmissionsByUser(u.id).length;
+                        return (
+                          <option key={u.id} value={u.id}>
+                            {u.display_name} ({reviewedCount} approved reviews)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono text-slate-300 mb-1">
+                      Approved Review Deliverable
+                    </label>
+                    <select
+                      value={awardBadgeSubmissionId}
+                      onChange={(e) => setAwardBadgeSubmissionId(e.target.value)}
+                      required
+                      disabled={!awardBadgeLearnerId || storage.getReviewedSubmissionsByUser(awardBadgeLearnerId).length === 0}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                    >
+                      <option value="">-- Select Reviewed Deliverable --</option>
+                      {awardBadgeLearnerId && storage.getReviewedSubmissionsByUser(awardBadgeLearnerId).map(sub => {
+                        const asg = storage.getAssignments().find(a => a.id === sub.assignment_id);
+                        return (
+                          <option key={sub.id} value={sub.id}>
+                            {asg ? `Day ${asg.day_number}: ${asg.title}` : sub.id} (Grade: {sub.grade_score}/100)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono text-slate-300 mb-1">Competency Badge</label>
+                    <select
+                      value={awardBadgeId}
+                      onChange={(e) => setAwardBadgeId(e.target.value)}
+                      required
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="">-- Choose Badge --</option>
+                      {allBadges.map(bg => (
+                        <option key={bg.id} value={bg.id}>
+                          {bg.name} ({bg.slug})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={!awardBadgeLearnerId || !storage.canAssignCredentials(awardBadgeLearnerId)}
+                    className="px-6 py-2.5 rounded-xl font-bold text-xs bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-colors shadow-md shadow-emerald-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Award Badge After Review
                   </button>
                 </div>
               </form>
@@ -1105,6 +1400,65 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Issued Badges Database */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden">
+              <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                <h4 className="font-bold text-sm text-white">Issued Competency Badges Registry</h4>
+                <span className="text-xs font-mono text-slate-400">{allLearnerBadges.length} Records</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 font-mono">
+                    <tr>
+                      <th className="p-3.5">Credential ID</th>
+                      <th className="p-3.5">Learner</th>
+                      <th className="p-3.5">Badge</th>
+                      <th className="p-3.5">Issued At</th>
+                      <th className="p-3.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {allLearnerBadges.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-6 text-center text-slate-500">
+                          No competency badges issued yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      allLearnerBadges.map(lb => {
+                        const learner = allUsers.find(u => u.id === lb.user_id);
+                        const badgeInfo = allBadges.find(b => b.id === lb.badge_id);
+                        return (
+                          <tr key={lb.id} className="hover:bg-slate-900/50">
+                            <td className="p-3.5 font-mono text-emerald-400 font-bold">
+                              {lb.credential_id}
+                            </td>
+                            <td className="p-3.5 font-medium text-white">
+                              {learner?.display_name || lb.user_id}
+                            </td>
+                            <td className="p-3.5 text-slate-300">
+                              {badgeInfo?.name || lb.badge_id}
+                            </td>
+                            <td className="p-3.5 text-slate-400">
+                              {new Date(lb.issued_at).toLocaleDateString()}
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <button
+                                onClick={() => onNavigate(`/verify/badge/${lb.credential_id}`)}
+                                className="text-cyan-400 hover:underline"
+                              >
+                                Verify Link
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>

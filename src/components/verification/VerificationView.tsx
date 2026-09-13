@@ -108,34 +108,41 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8 print:bg-white print:p-0">
       
-      {/* Embedded Print & Export Styling */}
+      {/* Embedded High-Fidelity Print & PDF Export Stylesheet */}
       <style>{`
         @media print {
           @page {
-            size: A4 landscape;
-            margin: 6mm;
+            size: ${type === 'certificate' ? 'A4 landscape' : 'A4 portrait'};
+            margin: 8mm;
           }
           html, body {
             background: #ffffff !important;
             color: #090d16 !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .no-print {
+          .no-print, header, nav, footer {
             display: none !important;
           }
           .certificate-print-sheet {
             display: block !important;
             width: 100% !important;
-            height: 100% !important;
             max-width: 100% !important;
             margin: 0 auto !important;
             box-shadow: none !important;
+            border: 6px solid #090d16 !important;
             border-radius: 0 !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .certificate-print-sheet * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
       `}</style>

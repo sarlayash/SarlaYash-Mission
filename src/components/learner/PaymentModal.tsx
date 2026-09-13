@@ -19,6 +19,7 @@ interface PaymentModalProps {
   isOpen: boolean;
   user: User;
   track: Track;
+  dayNumber?: number;
   onClose: () => void;
   onPaymentSubmitted: () => void;
 }
@@ -27,6 +28,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   isOpen,
   user,
   track,
+  dayNumber,
   onClose,
   onPaymentSubmitted
 }) => {
@@ -113,6 +115,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         user_id: user.id,
         enrollment_id: enrollment.id,
+        track_id: track.id,
+        day_number: dayNumber,
         amount,
         currency: 'INR',
         payment_method: 'UPI',
@@ -128,15 +132,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       storage.logAudit(user.id, 'PAYMENT_SUBMITTED', 'Payment', payment.id, {
         utr: utrNumber.trim(),
         amount,
-        track: track.name
+        track: track.name,
+        day_number: dayNumber
       });
 
       // 4. Save In-App Notification
       storage.saveNotification({
         id: `notif-${Date.now()}`,
         user_id: user.id,
-        title: 'Payment Submitted for Verification',
-        body: `Your ₹${amount} contribution for ${track.name} (UTR: ${utrNumber.trim()}) is under review by administrator Kapil.`,
+        title: dayNumber ? `Day ${dayNumber} Fee Submitted for Verification` : 'Payment Submitted for Verification',
+        body: dayNumber 
+          ? `Your daily ₹${amount} fee for Day ${dayNumber} (${track.name}, UTR: ${utrNumber.trim()}) has been queued for verification by Kapil.`
+          : `Your ₹${amount} contribution for ${track.name} (UTR: ${utrNumber.trim()}) is under review by administrator Kapil.`,
         type: 'assignment',
         delivery_channel: 'in_app',
         status: 'delivered',
@@ -162,13 +169,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         <div className="p-6 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
           <div>
             <span className="text-[11px] font-mono font-semibold text-cyan-400 uppercase tracking-wider">
-              Contribution & Enrollment
+              {dayNumber ? `Day ${dayNumber} Daily Contribution` : 'Contribution & Enrollment'}
             </span>
             <h2 className="text-xl font-display font-bold text-white mt-0.5">
-              ₹{amount} Symbolic Contribution
+              ₹{amount} {dayNumber ? `Mission Fee · Day ${dayNumber}` : 'Symbolic Contribution'}
             </h2>
             <p className="text-xs text-slate-400">
-              Enrolling in: <strong className="text-slate-200">{track.name}</strong>
+              Track: <strong className="text-slate-200">{track.name}</strong>
             </p>
           </div>
           <button

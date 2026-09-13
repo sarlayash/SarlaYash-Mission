@@ -11,12 +11,15 @@ import {
   ShieldCheck, 
   Printer,
   X,
-  Infinity as InfinityIcon
+  Infinity as InfinityIcon,
+  Eye,
+  Check
 } from 'lucide-react';
 import { User, Certificate, LearnerBadge, Badge } from '../../types';
 import { storage } from '../../lib/storage';
 import { generateQrDataUrl, getCertificateVerificationUrl, getBadgeVerificationUrl } from '../../lib/qr';
 import { StatusBadge } from '../common/StatusBadge';
+import { DEMO_CERTIFICATES, DEMO_LEARNER_BADGES } from '../../data/demoCredentials';
 
 interface CredentialsWalletProps {
   user: User;
@@ -28,6 +31,7 @@ export const CredentialsWallet: React.FC<CredentialsWalletProps> = ({ user, onNa
   const learnerBadges = storage.getLearnerBadges(user.id);
   const allBadges = storage.getBadges();
 
+  const [activeTab, setActiveTab] = useState<'earned' | 'demo'>('earned');
   const [selectedCert, setSelectedCert] = useState<Certificate | null>(null);
   const [certQrUrl, setCertQrUrl] = useState<string>('');
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -63,155 +67,355 @@ export const CredentialsWallet: React.FC<CredentialsWalletProps> = ({ user, onNa
             </p>
           </div>
 
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => onNavigate('/dashboard')}
+              className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+
+        {/* View Mode Switcher: Earned vs Demo Access */}
+        <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
           <button
-            onClick={() => onNavigate('/dashboard')}
-            className="self-start sm:self-auto px-4 py-2 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200"
+            onClick={() => setActiveTab('earned')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
+              activeTab === 'earned'
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
+                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+            }`}
           >
-            Back to Dashboard
+            <Award className="w-3.5 h-3.5" />
+            My Earned Credentials ({certificates.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('demo')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
+              activeTab === 'demo'
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
+                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5 text-cyan-400" />
+            Demo Certificates & Badges (View Access)
           </button>
         </div>
 
-        {/* Issued Certificates Section */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
-              <Award className="w-5 h-5 text-cyan-400" />
-              Issued Certificates
-            </h2>
-            <span className="text-xs text-slate-400">
-              {certificates.length} {certificates.length === 1 ? 'Certificate' : 'Certificates'} Issued
-            </span>
-          </div>
+        {/* ========================================================================= */}
+        {/* TAB 1: MY EARNED CREDENTIALS */}
+        {/* ========================================================================= */}
+        {activeTab === 'earned' && (
+          <div className="space-y-8">
+            {/* Issued Certificates Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                  <Award className="w-5 h-5 text-cyan-400" />
+                  Issued Certificates
+                </h2>
+                <span className="text-xs text-slate-400">
+                  {certificates.length} {certificates.length === 1 ? 'Certificate' : 'Certificates'} Issued
+                </span>
+              </div>
 
-          {certificates.length === 0 ? (
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-10 text-center text-slate-400 space-y-2">
-              <Award className="w-10 h-10 text-slate-600 mx-auto" />
-              <h3 className="text-sm font-semibold text-slate-200">No Certificates Issued Yet</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Certificates are generated once 30-day mission completion criteria are fulfilled or reviewed by instructor Kapil. No simulated credentials are created.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {certificates.map(cert => (
-                <div
-                  key={cert.id}
-                  className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 space-y-4 hover:border-cyan-500/40 transition-all shadow-lg"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-[10px] font-mono uppercase text-cyan-400 font-semibold tracking-wider block">
-                        Official Credential
-                      </span>
-                      <h3 className="text-lg font-bold text-white mt-0.5">
-                        {cert.track_name_snapshot}
-                      </h3>
-                      <p className="text-xs text-slate-400 font-mono">
-                        Number: {cert.certificate_number}
-                      </p>
-                    </div>
-                    <StatusBadge status={cert.status} />
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1">
-                    <p className="text-slate-400">Recipient: <strong className="text-white">{cert.recipient_name_snapshot}</strong></p>
-                    <p className="text-slate-400">Issue Date: <span className="text-slate-200">{new Date(cert.issue_date).toLocaleDateString()}</span></p>
-                    <p className="text-slate-400">Issued By: <span className="text-cyan-400 font-semibold">{cert.issued_by}</span></p>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
-                    <button
-                      onClick={() => handleInspectCertificate(cert)}
-                      className="flex-1 py-2 rounded-xl font-semibold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      View & Print Certificate
-                    </button>
-                    <button
-                      onClick={() => onNavigate(`/verify/certificate/${cert.certificate_number}`)}
-                      className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-1"
-                      title="Open Public Verification URL"
-                    >
-                      <QrCode className="w-3.5 h-3.5" />
-                      Verify
-                    </button>
-                  </div>
+              {certificates.length === 0 ? (
+                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center text-slate-400 space-y-3">
+                  <Award className="w-10 h-10 text-slate-600 mx-auto" />
+                  <h3 className="text-sm font-semibold text-slate-200">No Certificates Issued Yet</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Certificates are assigned only after all assignments are reviewed and approved by instructor Kapil.
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('demo')}
+                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Explore Demo Certificates & Badges
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Digital Badges Section */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-cyan-400" />
-              Digital Competency Badges
-            </h2>
-            <span className="text-xs text-slate-400">
-              {learnerBadges.length} Earned
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {allBadges.map(badge => {
-              const earnedRecord = learnerBadges.find(lb => lb.badge_id === badge.id && !lb.revoked_at);
-              const isEarned = !!earnedRecord;
-
-              return (
-                <div
-                  key={badge.id}
-                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
-                    isEarned
-                      ? 'bg-slate-900/90 border-cyan-500/40 shadow-md shadow-cyan-500/5'
-                      : 'bg-slate-900/40 border-slate-800/80 opacity-60'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        isEarned ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-slate-800 text-slate-500'
-                      }`}>
-                        <Award className="w-5 h-5" />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {certificates.map(cert => (
+                    <div
+                      key={cert.id}
+                      className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 space-y-4 hover:border-cyan-500/40 transition-all shadow-lg"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="text-[10px] font-mono uppercase text-cyan-400 font-semibold tracking-wider block">
+                            Official Credential
+                          </span>
+                          <h3 className="text-lg font-bold text-white mt-0.5">
+                            {cert.track_name_snapshot}
+                          </h3>
+                          <p className="text-xs text-slate-400 font-mono">
+                            Number: {cert.certificate_number}
+                          </p>
+                        </div>
+                        <StatusBadge status={cert.status} />
                       </div>
-                      {isEarned ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-cyan-400">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Earned
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-500">Incomplete</span>
+
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1">
+                        <p className="text-slate-400">Recipient: <strong className="text-white">{cert.recipient_name_snapshot}</strong></p>
+                        <p className="text-slate-400">Issue Date: <span className="text-slate-200">{new Date(cert.issue_date).toLocaleDateString()}</span></p>
+                        <p className="text-slate-400">Issued By: <span className="text-cyan-400 font-semibold">{cert.issued_by}</span></p>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                        <button
+                          onClick={() => handleInspectCertificate(cert)}
+                          className="flex-1 py-2 rounded-xl font-semibold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          View & Print Certificate
+                        </button>
+                        <button
+                          onClick={() => onNavigate(`/verify/certificate/${cert.certificate_number}`)}
+                          className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-1"
+                          title="Open Public Verification URL"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          Verify
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Digital Badges Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-cyan-400" />
+                  Digital Competency Badges
+                </h2>
+                <span className="text-xs text-slate-400">
+                  {learnerBadges.length} Earned
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {allBadges.map(badge => {
+                  const earnedRecord = learnerBadges.find(lb => lb.badge_id === badge.id && !lb.revoked_at);
+                  const isEarned = !!earnedRecord;
+
+                  return (
+                    <div
+                      key={badge.id}
+                      className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                        isEarned
+                          ? 'bg-slate-900/90 border-cyan-500/40 shadow-md shadow-cyan-500/5'
+                          : 'bg-slate-900/40 border-slate-800/80 opacity-60'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                            isEarned ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-slate-800 text-slate-500'
+                          }`}>
+                            <Award className="w-5 h-5" />
+                          </div>
+                          {isEarned ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-cyan-400">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Earned
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-500">Pending Review</span>
+                          )}
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold text-sm text-white">{badge.name}</h4>
+                          <p className="text-xs text-slate-400 mt-1 leading-relaxed">{badge.description}</p>
+                        </div>
+
+                        <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400">
+                          <span className="font-mono text-[10px] uppercase text-slate-500 block">Criteria:</span>
+                          {badge.criteria}
+                        </div>
+                      </div>
+
+                      {isEarned && earnedRecord && (
+                        <div className="pt-4 mt-4 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                          <span className="font-mono text-cyan-300">ID: {earnedRecord.credential_id}</span>
+                          <button
+                            onClick={() => onNavigate(`/verify/badge/${earnedRecord.credential_id}`)}
+                            className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                          >
+                            Verify <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </div>
                       )}
                     </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
-                    <div>
-                      <h4 className="font-semibold text-sm text-white">{badge.name}</h4>
-                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">{badge.description}</p>
+        {/* ========================================================================= */}
+        {/* TAB 2: DEMO CERTIFICATES & BADGES (VIEW ACCESS) */}
+        {/* ========================================================================= */}
+        {activeTab === 'demo' && (
+          <div className="space-y-8 animate-in fade-in duration-200">
+            
+            {/* Informational Banner */}
+            <div className="p-5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-[10px] font-mono uppercase text-cyan-400 font-bold tracking-wider">
+                  View Access Mode · Zero-To-Infinity Standards
+                </span>
+                <h3 className="text-base font-bold text-white">
+                  Demo Certificates & Competency Badges
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  These demo credentials demonstrate the exact layout, cryptographic verification QR code, and print-ready PDF format awarded upon completing the 30-day missions under Kapil.
+                </p>
+              </div>
+
+              <div className="shrink-0">
+                <span className="px-3 py-1.5 rounded-xl text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  Sample View Only
+                </span>
+              </div>
+            </div>
+
+            {/* Demo Certificates Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                  <Award className="w-5 h-5 text-cyan-400" />
+                  Demo Certificates (Both Tracks)
+                </h2>
+                <span className="text-xs font-mono text-cyan-400">
+                  {DEMO_CERTIFICATES.length} Demo Certificates
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {DEMO_CERTIFICATES.map(demoCert => (
+                  <div
+                    key={demoCert.id}
+                    className="bg-slate-900/90 border border-cyan-500/30 rounded-2xl p-6 space-y-4 shadow-xl hover:border-cyan-400 transition-all"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="text-[10px] font-mono uppercase text-cyan-400 font-semibold tracking-wider block">
+                          Demo Credential · View Access
+                        </span>
+                        <h3 className="text-lg font-bold text-white mt-0.5">
+                          {demoCert.track_name_snapshot}
+                        </h3>
+                        <p className="text-xs text-cyan-300 font-mono">
+                          Number: {demoCert.certificate_number}
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-emerald-950 border border-emerald-800/60 text-emerald-300">
+                        {demoCert.status}
+                      </span>
                     </div>
 
-                    <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400">
-                      <span className="font-mono text-[10px] uppercase text-slate-500 block">Criteria:</span>
-                      {badge.criteria}
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1">
+                      <p className="text-slate-400">Sample Recipient: <strong className="text-white">{demoCert.recipient_name_snapshot}</strong></p>
+                      <p className="text-slate-400">Issue Date: <span className="text-slate-200">{new Date(demoCert.issue_date).toLocaleDateString()}</span></p>
+                      <p className="text-slate-400">Verified By: <span className="text-cyan-400 font-semibold">{demoCert.issued_by}</span></p>
                     </div>
-                  </div>
 
-                  {isEarned && earnedRecord && (
-                    <div className="pt-4 mt-4 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                      <span className="font-mono text-cyan-300">ID: {earnedRecord.credential_id}</span>
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
                       <button
-                        onClick={() => onNavigate(`/verify/badge/${earnedRecord.credential_id}`)}
-                        className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                        onClick={() => handleInspectCertificate(demoCert)}
+                        className="flex-1 py-2 rounded-xl font-semibold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20"
                       >
-                        Verify <ExternalLink className="w-3 h-3" />
+                        <Printer className="w-3.5 h-3.5" />
+                        View & Print Demo Cert
+                      </button>
+                      <button
+                        onClick={() => onNavigate(`/verify/certificate/${demoCert.certificate_number}`)}
+                        className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-1"
+                        title="Open Public Verification URL"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        Verify
                       </button>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Demo Badges Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-cyan-400" />
+                  Demo Competency Badges
+                </h2>
+                <span className="text-xs font-mono text-cyan-400">
+                  {DEMO_LEARNER_BADGES.length} Sample Badges
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {DEMO_LEARNER_BADGES.map(demoBadge => {
+                  const badgeDef = allBadges.find(b => b.id === demoBadge.badge_id);
+
+                  return (
+                    <div
+                      key={demoBadge.id}
+                      className="p-5 rounded-2xl border border-cyan-500/30 bg-slate-900/90 shadow-md shadow-cyan-500/5 flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                            <Award className="w-5 h-5" />
+                          </div>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-cyan-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Sample Issued
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold text-sm text-white">
+                            {badgeDef?.name || 'Advanced AI Competency'}
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                            {badgeDef?.description || 'Awarded for exceptional mastery of hands-on deliverables.'}
+                          </p>
+                        </div>
+
+                        <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400">
+                          <span className="font-mono text-[10px] uppercase text-slate-500 block">Criteria:</span>
+                          {badgeDef?.criteria || 'Completion of week 1 hands-on deliverables reviewed by Kapil.'}
+                        </div>
+                      </div>
+
+                      <div className="pt-4 mt-4 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                        <span className="font-mono text-cyan-300 truncate max-w-[150px]">
+                          ID: {demoBadge.credential_id}
+                        </span>
+                        <button
+                          onClick={() => onNavigate(`/verify/badge/${demoBadge.credential_id}`)}
+                          className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold"
+                        >
+                          Verify <ExternalLink className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
           </div>
-        </div>
+        )}
 
         {/* Certificate Inspection & Print Modal */}
         {selectedCert && (
