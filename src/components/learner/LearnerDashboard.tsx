@@ -18,13 +18,15 @@ import {
   Laptop,
   AlertTriangle,
   MailCheck,
-  RefreshCw
+  RefreshCw,
+  Download
 } from 'lucide-react';
 import { User, Track, Enrollment } from '../../types';
 import { storage } from '../../lib/storage';
 import { StatusBadge } from '../common/StatusBadge';
 import { sendEmailVerificationToCurrent, reloadCurrentUserVerification } from '../../lib/firebase';
 import { getDeviceInfo } from '../../lib/device';
+import { generateLearnerReportPdf } from '../../lib/pdfReport';
 
 interface LearnerDashboardProps {
   user: User;
@@ -83,7 +85,33 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
   const [isCheckingVerification, setIsCheckingVerification] = useState(false);
   const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfSuccessMessage, setPdfSuccessMessage] = useState<string | null>(null);
   const currentDevice = getDeviceInfo();
+
+  const handleDownloadReport = () => {
+    try {
+      setIsGeneratingPdf(true);
+      generateLearnerReportPdf({
+        user,
+        enrollments,
+        submissions,
+        certificates,
+        learnerBadges: badges,
+        trackStats,
+        overallPercentage,
+        totalCompletedDays,
+        maxStreak
+      });
+      setPdfSuccessMessage('30-Day Mission Progress & Assignment Report downloaded as PDF!');
+      setTimeout(() => setPdfSuccessMessage(null), 5000);
+    } catch (err: any) {
+      console.error('Error generating PDF report:', err);
+      setPdfSuccessMessage('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
 
   const handleResendVerification = async () => {
     try {
@@ -153,6 +181,22 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
           </div>
         )}
 
+        {/* PDF Download Toast Notification */}
+        {pdfSuccessMessage && (
+          <div className="p-3.5 rounded-2xl bg-emerald-950/80 border border-emerald-700/80 text-emerald-200 text-xs flex items-center justify-between shadow-lg shadow-emerald-950/30 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="font-semibold">{pdfSuccessMessage}</span>
+            </div>
+            <button
+              onClick={() => setPdfSuccessMessage(null)}
+              className="text-emerald-400 hover:text-white text-xs font-bold px-2 py-0.5"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Welcome Card */}
         <div className="bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-950 border border-slate-800 rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-xl">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
@@ -208,39 +252,61 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
               </div>
             </div>
 
-            {/* Overall real progress ring */}
-            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 shrink-0 flex items-center gap-4">
-              <div className="text-center">
-                <span className="text-2xl sm:text-3xl font-bold font-mono text-cyan-400">
-                  {overallPercentage}%
-                </span>
-                <span className="text-[10px] font-mono text-slate-400 block uppercase mt-0.5">
-                  Real Overall Progress
-                </span>
-                <span className="text-[11px] text-slate-500 block">
-                  {totalCompletedDays} / {totalDaysAcrossTracks > 0 ? totalDaysAcrossTracks : 30} Days Done
-                </span>
+            {/* Overall real progress ring & download report */}
+            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 shrink-0 flex flex-col justify-between gap-3">
+              <div className="flex items-center gap-4">
+                <div className="text-center">
+                  <span className="text-2xl sm:text-3xl font-bold font-mono text-cyan-400">
+                    {overallPercentage}%
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400 block uppercase mt-0.5">
+                    Real Overall Progress
+                  </span>
+                  <span className="text-[11px] text-slate-500 block">
+                    {totalCompletedDays} / {totalDaysAcrossTracks > 0 ? totalDaysAcrossTracks : 30} Days Done
+                  </span>
+                </div>
+                <div className="w-px h-12 bg-slate-800" />
+                <div className="text-xs space-y-1 text-slate-400">
+                  <p>Enrolled Tracks: <strong className="text-slate-200">{enrollments.length}</strong></p>
+                  <p>Submitted Works: <strong className="text-slate-200">{submissions.length}</strong></p>
+                  <p>Certificates: <strong className="text-slate-200">{certificates.length}</strong></p>
+                </div>
               </div>
-              <div className="w-px h-12 bg-slate-800" />
-              <div className="text-xs space-y-1 text-slate-400">
-                <p>Enrolled Tracks: <strong className="text-slate-200">{enrollments.length}</strong></p>
-                <p>Submitted Works: <strong className="text-slate-200">{submissions.length}</strong></p>
-                <p>Certificates: <strong className="text-slate-200">{certificates.length}</strong></p>
-              </div>
+              <button
+                id="download-report-btn-welcome"
+                onClick={handleDownloadReport}
+                disabled={isGeneratingPdf}
+                className="w-full py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-cyan-200 border border-cyan-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+              >
+                <Download className={`w-3.5 h-3.5 text-cyan-400 ${isGeneratingPdf ? 'animate-bounce' : ''}`} />
+                <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Report'}</span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* Track Progress Cards */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-cyan-400" />
               Track Progress & Status
             </h2>
-            <span className="text-xs text-slate-400">
-              Contribution: ₹1 / session · UPI 9873152277@kotak
-            </span>
+            <div className="flex items-center gap-3">
+              <button
+                id="download-report-btn-section"
+                onClick={handleDownloadReport}
+                disabled={isGeneratingPdf}
+                className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Download Report</span>
+              </button>
+              <span className="text-xs text-slate-400 hidden sm:inline">
+                Contribution: ₹1 / session · UPI 9873152277@kotak
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -421,10 +487,10 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
         )}
 
         {/* Quick Navigation Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <button
             onClick={() => onNavigate('/assignments')}
-            className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-left transition-all group"
+            className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-left transition-all group cursor-pointer"
           >
             <FileText className="w-5 h-5 text-cyan-400 mb-2 group-hover:scale-110 transition-transform" />
             <h4 className="font-semibold text-sm text-white">Assignment Center</h4>
@@ -433,7 +499,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
           <button
             onClick={() => onNavigate('/progress')}
-            className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-left transition-all group"
+            className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-left transition-all group cursor-pointer"
           >
             <Calendar className="w-5 h-5 text-cyan-400 mb-2 group-hover:scale-110 transition-transform" />
             <h4 className="font-semibold text-sm text-white">30-Day Timeline</h4>
@@ -442,11 +508,27 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
           <button
             onClick={() => onNavigate('/credentials')}
-            className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-left transition-all group"
+            className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-left transition-all group cursor-pointer"
           >
             <Award className="w-5 h-5 text-cyan-400 mb-2 group-hover:scale-110 transition-transform" />
             <h4 className="font-semibold text-sm text-white">Credentials & Badges</h4>
             <p className="text-xs text-slate-400 mt-1">View earned badges, download PDF certs, and verify QR codes.</p>
+          </button>
+
+          <button
+            id="download-report-btn-card"
+            onClick={handleDownloadReport}
+            disabled={isGeneratingPdf}
+            className="p-5 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 hover:border-cyan-400/60 text-left transition-all group cursor-pointer"
+          >
+            <Download className={`w-5 h-5 text-cyan-400 mb-2 group-hover:scale-110 transition-transform ${isGeneratingPdf ? 'animate-bounce' : ''}`} />
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-sm text-white">Download Report</h4>
+              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                PDF
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">Export full transcript of completed assignments, grades, and 30-day progress.</p>
           </button>
         </div>
 
