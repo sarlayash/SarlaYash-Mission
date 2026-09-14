@@ -18,7 +18,7 @@ import {
   orderBy 
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { User } from '../types';
+import { User, CommunicationRecord } from '../types';
 import { getDeviceInfo } from './device';
 
 // 1. Initialize Firebase App safely (singleton)
@@ -210,4 +210,48 @@ export async function reloadCurrentUserVerification(): Promise<boolean> {
   }
 
   return isVerified;
+}
+
+/**
+  * Save a communication dispatch record to Firestore
+  */
+export async function syncCommunicationToFirestore(comm: CommunicationRecord): Promise<void> {
+  try {
+    const docRef = doc(firestoreDb, 'communications', comm.id);
+    await setDoc(docRef, comm, { merge: true });
+  } catch (error) {
+    console.warn('Error saving communication to Firestore:', error);
+  }
+}
+
+/**
+ * Real-time listener for communications dispatched by admin
+ */
+export function subscribeToCommunicationsRealtime(
+  onUpdate: (communications: CommunicationRecord[]) => void
+): () => void {
+  try {
+    const colRef = collection(firestoreDb, 'communications');
+    const q = query(colRef);
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const comms: CommunicationRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          comms.push({ ...(docSnap.data() as CommunicationRecord), id: docSnap.id });
+        });
+        comms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        onUpdate(comms);
+      },
+      (error) => {
+        console.warn('Real-time communications listener error:', error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (err) {
+    console.warn('Failed to subscribe to Firestore communications:', err);
+    return () => {};
+  }
 }

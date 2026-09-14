@@ -9,6 +9,11 @@ service cloud.firestore {
       allow write: if request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'kapilnarula27july@gmail.com')
                    || request.auth == null;
     }
+
+    match /communications/{commId} {
+      // Allow reading and writing communications so admins can dispatch emails/texts and learners receive them real-time
+      allow read, write: if true;
+    }
     
     // Default fallback for any other collections
     match /{document=**} {

@@ -14,7 +14,8 @@ import {
   NotificationItem,
   EmailLog,
   AuditLog,
-  PlatformSettings
+  PlatformSettings,
+  CommunicationRecord
 } from '../types';
 import { INITIAL_TRACKS, INITIAL_BADGES, generateTrackDays } from '../data/curriculumData';
 import { DEMO_CERTIFICATES, DEMO_LEARNER_BADGES } from '../data/demoCredentials';
@@ -33,6 +34,7 @@ const STORAGE_KEYS = {
   LEARNER_BADGES: 'zti_learner_badges',
   CERTIFICATES: 'zti_certificates',
   NOTIFICATIONS: 'zti_notifications',
+  COMMUNICATIONS: 'zti_communications',
   EMAIL_LOGS: 'zti_email_logs',
   AUDIT_LOGS: 'zti_audit_logs',
   SETTINGS: 'zti_settings',
@@ -148,6 +150,9 @@ export function initializeStorage(forceReset = false) {
     }
     if (!localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS)) {
       saveToStorage(STORAGE_KEYS.NOTIFICATIONS, []);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.COMMUNICATIONS)) {
+      saveToStorage(STORAGE_KEYS.COMMUNICATIONS, []);
     }
     if (!localStorage.getItem(STORAGE_KEYS.EMAIL_LOGS)) {
       saveToStorage(STORAGE_KEYS.EMAIL_LOGS, []);
@@ -348,6 +353,7 @@ export const storage = {
     saveToStorage(STORAGE_KEYS.LEARNER_BADGES, []);
     saveToStorage(STORAGE_KEYS.CERTIFICATES, []);
     saveToStorage(STORAGE_KEYS.NOTIFICATIONS, []);
+    saveToStorage(STORAGE_KEYS.COMMUNICATIONS, []);
     saveToStorage(STORAGE_KEYS.EMAIL_LOGS, []);
     saveToStorage(STORAGE_KEYS.AUDIT_LOGS, []);
     saveToStorage(STORAGE_KEYS.DEMO_MODE, false);
@@ -834,6 +840,88 @@ export const storage = {
     const all = storage.getEmailLogs();
     all.unshift(log);
     saveToStorage(STORAGE_KEYS.EMAIL_LOGS, all);
+  },
+
+  // Communications (Email & Text Hub)
+  getCommunications: (): CommunicationRecord[] => getFromStorage<CommunicationRecord[]>(STORAGE_KEYS.COMMUNICATIONS, []),
+  saveCommunication: (comm: CommunicationRecord) => {
+    const all = storage.getCommunications();
+    const idx = all.findIndex(c => c.id === comm.id);
+    if (idx >= 0) {
+      all[idx] = comm;
+    } else {
+      all.unshift(comm);
+    }
+    saveToStorage(STORAGE_KEYS.COMMUNICATIONS, all);
+  },
+  getCommunicationsForLearner: (learnerId: string): CommunicationRecord[] => {
+    const all = storage.getCommunications();
+    return all.filter(c => 
+      c.audience_type === 'all' || 
+      c.recipient_ids.includes(learnerId)
+    );
+  },
+  dispatchCommunication: (comm: CommunicationRecord) => {
+    // 1. Save communication record
+    storage.saveCommunication(comm);
+
+    // 2. Dispatch in-app notifications to each recipient
+    if (comm.audience_type === 'all') {
+      storage.saveNotification({
+        id: `notif-comm-${Date.now()}-all`,
+        user_id: undefined, // broadcast to all
+        title: comm.subject,
+        body: comm.body,
+        type: 'announcement',
+        delivery_channel: comm.channel === 'text' ? 'push' : 'email',
+        status: 'delivered',
+        sent_at: comm.created_at,
+        created_by: comm.sender_id,
+        created_at: comm.created_at
+      });
+    } else {
+      comm.recipient_ids.forEach(recipientId => {
+        storage.saveNotification({
+          id: `notif-comm-${Date.now()}-${recipientId}`,
+          user_id: recipientId,
+          title: comm.subject,
+          body: comm.body,
+          type: 'announcement',
+          delivery_channel: comm.channel === 'text' ? 'push' : 'email',
+          status: 'delivered',
+          sent_at: comm.created_at,
+          created_by: comm.sender_id,
+          created_at: comm.created_at
+        });
+      });
+    }
+
+    // 3. Log email dispatches
+    comm.recipient_emails.forEach((email, idx) => {
+      const recipientId = comm.recipient_ids[idx] || '';
+      storage.logEmail({
+        id: `elog-${Date.now()}-${idx}`,
+        recipient_user_id: recipientId,
+        recipient_email: email,
+        template_name: comm.audience_type === 'individual' ? 'Direct Learner Outreach' : (comm.group_label || 'Broadcast'),
+        subject: comm.subject,
+        delivery_status: 'sent',
+        sent_at: comm.created_at,
+        sent_by: comm.sender_id,
+        audience_type: comm.audience_type,
+        recipient_count: comm.recipient_emails.length,
+        body_preview: comm.body.slice(0, 100)
+      });
+    });
+
+    // 4. Audit Log
+    storage.logAudit(comm.sender_id, 'COMMUNICATION_DISPATCHED', 'Communication', comm.id, {
+      subject: comm.subject,
+      channel: comm.channel,
+      audience_type: comm.audience_type,
+      recipient_count: comm.recipient_emails.length,
+      group_label: comm.group_label
+    });
   },
 
   // Audit Logs

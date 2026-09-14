@@ -19,6 +19,25 @@
         "auth_provider": { "type": "string", "description": "google or admin" },
         "provider_user_id": { "type": "string", "description": "Provider user ID" }
       }
+    },
+    "Communication": {
+      "collection": "communications",
+      "fields": {
+        "id": { "type": "string", "description": "Unique message ID" },
+        "subject": { "type": "string", "description": "Message subject or title" },
+        "body": { "type": "string", "description": "Full message text" },
+        "channel": { "type": "string", "description": "email, text, or both" },
+        "audience_type": { "type": "string", "description": "individual, group, or all" },
+        "recipient_ids": { "type": "array", "description": "Array of recipient user IDs" },
+        "recipient_emails": { "type": "array", "description": "Array of recipient email addresses" },
+        "recipient_names": { "type": "array", "description": "Array of recipient display names" },
+        "group_label": { "type": "string", "description": "Optional group or cohort label" },
+        "sender_id": { "type": "string", "description": "Admin sender user ID" },
+        "sender_name": { "type": "string", "description": "Admin sender display name" },
+        "sender_email": { "type": "string", "description": "Admin sender email" },
+        "status": { "type": "string", "description": "Delivery status: sent or delivered" },
+        "created_at": { "type": "string", "description": "Creation ISO timestamp" }
+      }
     }
   }
 }

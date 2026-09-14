@@ -29,13 +29,15 @@ import {
   Radio,
   Wifi,
   Sparkles,
-  CheckCheck
+  CheckCheck,
+  Mail
 } from 'lucide-react';
 import { User, Track, TrackDay, AssignmentSubmission, Payment, Certificate, LearnerBadge } from '../../types';
 import { storage } from '../../lib/storage';
 import { auth } from '../../lib/auth';
 import { StatusBadge } from '../common/StatusBadge';
 import { subscribeToLearnersRealtime, FIREBASE_METADATA } from '../../lib/firebase';
+import { AdminCommunications } from './AdminCommunications';
 
 interface AdminPortalProps {
   currentUser: User;
@@ -47,6 +49,7 @@ type AdminTab =
   | 'payments' 
   | 'assignments' 
   | 'learners' 
+  | 'communications'
   | 'curriculum' 
   | 'credentials' 
   | 'announcements' 
@@ -95,6 +98,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
   const [broadcastBody, setBroadcastBody] = useState('');
   const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'generative-ai' | 'agentic-ai'>('all');
   const [broadcastSentNotice, setBroadcastSentNotice] = useState(false);
+
+  // ----------------------------------------------------
+  // Communications State (Email & Text Hub)
+  // ----------------------------------------------------
+  const [commPreselectedLearnerId, setCommPreselectedLearnerId] = useState<string | undefined>(undefined);
+  const [commPreselectedLearnerIds, setCommPreselectedLearnerIds] = useState<string[]>([]);
+  const [selectedLearnerCheckboxIds, setSelectedLearnerCheckboxIds] = useState<string[]>([]);
 
   // ----------------------------------------------------
   // Manual Certificate Generator State
@@ -467,6 +477,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
             { id: 'payments', label: `Payments (${metrics.pendingPayments})`, icon: CreditCard },
             { id: 'assignments', label: `Grading Desk (${metrics.pendingReviews})`, icon: FileCheck },
             { id: 'learners', label: `Learners (${metrics.totalLearners})`, icon: Users },
+            { id: 'communications', label: 'Email & Text Center', icon: Mail },
             { id: 'curriculum', label: 'Curriculum Editor', icon: BookOpen },
             { id: 'credentials', label: 'Certificates & Badges', icon: Award },
             { id: 'announcements', label: 'Broadcasts', icon: Bell },
@@ -560,6 +571,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Multi-Channel Learner Communications Quick Access */}
+            <div className="bg-gradient-to-r from-cyan-950/40 via-slate-900/80 to-blue-950/40 border border-cyan-800/40 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                    Multi-Channel Learner Communications
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-300">
+                      Email + SMS Ready
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Dispatch individualized, cohort-targeted (by track or status), or blast announcements across all {allUsers.length} learners with delivery audit tracking.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveTab('communications')}
+                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold transition-all shadow-md flex items-center gap-2"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Open Communications Hub</span>
+              </button>
             </div>
           </div>
         )}
@@ -1202,12 +1240,79 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                 </div>
               </div>
 
+              {/* Batch Action Toolbar */}
+              {selectedLearnerCheckboxIds.length > 0 && (
+                <div className="p-3.5 bg-gradient-to-r from-cyan-950/90 to-blue-950/90 border border-cyan-600/70 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xl animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-cyan-500 text-slate-950 flex items-center justify-center font-bold text-xs">
+                      {selectedLearnerCheckboxIds.length}
+                    </div>
+                    <span className="font-bold text-white text-xs">
+                      {selectedLearnerCheckboxIds.length} {selectedLearnerCheckboxIds.length === 1 ? 'Learner' : 'Learners'} selected
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCommPreselectedLearnerIds(selectedLearnerCheckboxIds);
+                        setCommPreselectedLearnerId(undefined);
+                        setActiveTab('communications');
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-all shadow-md"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>Send Email & Text to Selected ({selectedLearnerCheckboxIds.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selEmails = filteredLearners
+                          .filter(u => selectedLearnerCheckboxIds.includes(u.id))
+                          .map(u => u.email)
+                          .filter(Boolean);
+                        navigator.clipboard.writeText(selEmails.join(', '));
+                        alert(`Copied ${selEmails.length} email addresses to clipboard.`);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white text-xs font-mono"
+                    >
+                      Copy Emails
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLearnerCheckboxIds([])}
+                      className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-white text-xs"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Real-time Learner Table */}
               <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 font-mono">
                       <tr>
+                        <th className="p-4 w-10">
+                          <input
+                            type="checkbox"
+                            checked={filteredLearners.length > 0 && selectedLearnerCheckboxIds.length === filteredLearners.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedLearnerCheckboxIds(filteredLearners.map(u => u.id));
+                              } else {
+                                setSelectedLearnerCheckboxIds([]);
+                              }
+                            }}
+                            className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0 cursor-pointer"
+                            title="Select all filtered learners"
+                          />
+                        </th>
                         <th className="p-4">Learner Identity</th>
                         <th className="p-4">Email Verification</th>
                         <th className="p-4">Device & Browser Telemetry</th>
@@ -1219,7 +1324,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                     <tbody className="divide-y divide-slate-800">
                       {filteredLearners.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="p-10 text-center text-slate-500 space-y-2">
+                          <td colSpan={7} className="p-10 text-center text-slate-500 space-y-2">
                             <Users className="w-8 h-8 mx-auto text-slate-600" />
                             <p className="text-sm font-semibold text-slate-300">No learners match the current filter or search criteria.</p>
                             <p className="text-xs text-slate-500">Learners who sign in via Google will automatically appear here in real time.</p>
@@ -1243,10 +1348,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
                           // Active presence detection (within last 30 minutes)
                           const lastLoginMs = user.last_login_at ? new Date(user.last_login_at).getTime() : 0;
                           const isOnlineNow = (Date.now() - lastLoginMs) < 30 * 60 * 1000;
+                          const isChecked = selectedLearnerCheckboxIds.includes(user.id);
 
                           return (
-                            <tr key={user.id} className="hover:bg-slate-900/70 transition-colors">
+                            <tr key={user.id} className={`hover:bg-slate-900/70 transition-colors ${isChecked ? 'bg-cyan-950/20' : ''}`}>
                               
+                              {/* Row Checkbox */}
+                              <td className="p-4">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedLearnerCheckboxIds(prev => [...prev, user.id]);
+                                    } else {
+                                      setSelectedLearnerCheckboxIds(prev => prev.filter(id => id !== user.id));
+                                    }
+                                  }}
+                                  className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0 cursor-pointer"
+                                />
+                              </td>
+
                               {/* Learner Identity */}
                               <td className="p-4">
                                 <div className="flex items-center gap-3">
@@ -1374,7 +1496,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
 
                               {/* Admin Actions */}
                               <td className="p-4 text-right">
-                                <div className="flex items-center justify-end gap-2">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => {
+                                      setCommPreselectedLearnerId(user.id);
+                                      setCommPreselectedLearnerIds([]);
+                                      setActiveTab('communications');
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 hover:text-white text-xs font-semibold border border-cyan-700/80 transition-colors flex items-center gap-1"
+                                    title={`Send Email or Text to ${user.display_name}`}
+                                  >
+                                    <Mail className="w-3.5 h-3.5" />
+                                    <span>Message</span>
+                                  </button>
                                   <button
                                     onClick={() => {
                                       setCertLearnerId(user.id);
@@ -1410,6 +1544,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
             </div>
           );
         })()}
+
+        {/* ---------------------------------------------------- */}
+        {/* TAB: COMMUNICATIONS (EMAIL & TEXT DISPATCH HUB) */}
+        {/* ---------------------------------------------------- */}
+        {activeTab === 'communications' && (
+          <AdminCommunications
+            currentUser={currentUser}
+            allUsers={allUsers}
+            preselectedLearnerId={commPreselectedLearnerId}
+            preselectedLearnerIds={commPreselectedLearnerIds}
+            onClearPreselected={() => {
+              setCommPreselectedLearnerId(undefined);
+              setCommPreselectedLearnerIds([]);
+            }}
+            onRefreshData={triggerRefresh}
+          />
+        )}
 
         {/* ---------------------------------------------------- */}
         {/* TAB 5: CURRICULUM EDITOR */}
@@ -1890,6 +2041,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ currentUser, onNavigat
         {/* ---------------------------------------------------- */}
         {activeTab === 'announcements' && (
           <div className="max-w-2xl bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4">
+            {/* Recommendation banner for Email/Text Hub */}
+            <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-800/60 text-cyan-300 text-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Want to send targeted <strong>Emails</strong> or <strong>SMS text messages</strong> to specific individuals or cohorts?</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('communications')}
+                className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shrink-0"
+              >
+                Go to Communications Hub →
+              </button>
+            </div>
+
             <h3 className="font-display font-bold text-base text-white flex items-center gap-2">
               <Bell className="w-4 h-4 text-cyan-400" />
               Broadcast In-App Announcement

@@ -237,6 +237,31 @@ export interface EmailLog {
   error_message?: string;
   sent_at: string;
   sent_by: string;
+  audience_type?: 'individual' | 'group' | 'all';
+  recipient_count?: number;
+  body_preview?: string;
+}
+
+export type MessageAudienceType = 'individual' | 'group' | 'all';
+export type MessageChannelType = 'email' | 'text' | 'both';
+
+export interface CommunicationRecord {
+  id: string;
+  subject: string;
+  body: string;
+  channel: MessageChannelType;
+  audience_type: MessageAudienceType;
+  recipient_ids: string[];
+  recipient_emails: string[];
+  recipient_names: string[];
+  group_label?: string;
+  sender_id: string;
+  sender_name: string;
+  sender_email: string;
+  status: 'sent' | 'delivered';
+  created_at: string;
+  sms_text?: string;
+  email_subject?: string;
 }
 
 export interface AuditLog {
